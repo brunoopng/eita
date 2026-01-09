@@ -56,6 +56,69 @@ header{height:var(--header-h);display:flex;align-items:center;justify-content:sp
 .btn-header svg{opacity:0.9}
 .btn-header:active{transform:translateY(1px)}
 
+.watch-modal{
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.65);
+  align-items:center;
+  justify-content:center;
+  z-index:99999;
+}
+.watch-card{
+  width:900px;
+  max-width:96%;
+  background:linear-gradient(180deg,#0f1012,#0b0b0b);
+  padding:14px;
+  border-radius:14px;
+  position:relative;
+}
+.watch-video{
+  width:100%;
+  max-height:70vh;
+  background:#000;
+  border-radius:10px;
+}
+.watch-controls{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:10px;
+}
+.watch-controls .btn,
+.watch-controls input{
+  padding:8px 12px;
+  border-radius:8px;
+  border:1px solid rgba(255,255,255,.08);
+  background:transparent;
+  color:#fff;
+}
+.watch-status{
+  margin-left:auto;
+  font-size:13px;
+  color:#aaa;
+}
+.watch-close{
+  position:absolute;
+  top:8px;
+  right:12px;
+  background:none;
+  border:none;
+  color:#aaa;
+  font-size:18px;
+  cursor:pointer;
+}
+video#player{
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  background:black;
+}
+:fullscreen video#player{
+  width:100vw;
+  height:100vh;
+}
+
 /* layout */
 .layout{display:flex;flex:1;min-height:0;transition:all var(--fade-duration) cubic-bezier(.2,.9,.2,1)}
 .left{width:36%;max-width:420px;min-width:260px;background:var(--card);padding:16px;box-sizing:border-box;border-right:1px solid rgba(255,255,255,0.03);transform:translateX(-110%);opacity:0;pointer-events:none;position:fixed;left:0;top:var(--header-h);bottom:0;z-index:1000;transition:transform .28s ease,opacity .28s ease}
@@ -254,6 +317,36 @@ header{height:var(--header-h);display:flex;align-items:center;justify-content:sp
 </style>
 </head>
 <body>
+<!-- WATCH TOGETHER MODAL -->
+<div id="watchModal" class="watch-modal">
+  <div class="watch-card">
+    <button id="watchClose" class="watch-close">✕</button>
+
+    <video id="player" class="watch-video" playsinline></video>
+
+    <div class="watch-controls">
+      <input id="roomId" placeholder="Sala" />
+
+      <button id="createBtn" class="btn">Criar</button>
+      <button id="joinBtn" class="btn">Entrar</button>
+
+      <input id="fileInput" type="file" accept="video/*" />
+      <button id="loadBtn" class="btn">Carregar</button>
+
+      <button id="startStreamBtn" class="btn">Iniciar</button>
+      <button id="playBtn" class="btn">▶</button>
+      <button id="pauseBtn" class="btn">⏸</button>
+      <button id="unmuteBtn" class="btn" style="display:none">🔊</button>
+
+      <span id="status" class="watch-status">offline</span>
+    </div>
+
+    <pre id="log" style="display:none"></pre>
+  </div>
+</div>
+
+
+
 
 <!-- SPLASH -->
 <div id="splashScreen" aria-hidden="false">
@@ -1476,431 +1569,59 @@ window.openChat = openChat;
 window.getProfile = getProfile;
 window.db = db;
 window.supabaseClient = supabaseClient;
-</script>
 
-<!-- Firestore-based Watch Together (robusto) + LiveKit streaming (best-effort) -->
 <script>
-document.addEventListener('DOMContentLoaded', () => {
+/* ===== WATCH TOGETHER MODAL CONTROL ===== */
 
-  const btnWatchTogether = document.getElementById('btnWatchTogether');
-  const watchModal = document.getElementById('watchModal');
-  const watchClose = document.getElementById('watchClose');
-  const wtVideo = document.getElementById('wtVideo');
-  const wtRoomInput = document.getElementById('wtRoom');
-  const wtJoinBtn = document.getElementById('wtJoin');
-  const wtToggleBtn = document.getElementById('wtToggle');
-  const wtStatus = document.getElementById('wtStatus');
-  const wtUrlInput = document.getElementById('wtUrl');
-  const wtLoadUrl = document.getElementById('wtLoadUrl');
-  const wtSource = document.getElementById('wtSource');
+const watchModal = document.getElementById('watchModal');
+const btnWatchTogether = document.getElementById('btnWatchTogether');
+const watchCloseBtn = document.getElementById('watchClose');
 
-  const LIVEKIT_WS = 'wss://project-stxdbpay.livekit.cloud';
-  const LIVEKIT_TOKEN_SERVER = 'https://livekit-token-server-we15.onrender.com';
+if (btnWatchTogether && watchModal) {
+  btnWatchTogether.addEventListener('click', () => {
 
-  if(wtLoadUrl && wtUrlInput && wtSource){
-    wtLoadUrl.addEventListener('click', () => {
-      const url = (wtUrlInput.value || '').trim();
-      if(!url){ alert('Cole a URL do vídeo (mp4, webm, etc).'); return; }
-      wtSource.src = url;
-      wtVideo.muted = false;
-      wtVideo.load();
-      try{ wtVideo.currentTime = 0; }catch(e){}
-      console.log('[WT] vídeo carregado:', url);
-    });
-  }
-
-  if(!btnWatchTogether || !watchModal || !wtVideo){ console.error('[WT] elementos não encontrados'); return; }
-  btnWatchTogether.addEventListener('click', () => { watchModal.style.display = 'flex'; });
-
-  watchClose && watchClose.addEventListener('click', async () => { watchModal.style.display = 'none'; try{ await disconnectLiveKit(); }catch(e){} });
-
-  watchModal.addEventListener('click', async (e) => { if(e.target === watchModal){ watchModal.style.display = 'none'; try{ await disconnectLiveKit(); }catch(e){} } });
-
-  const WT_clientId = Math.random().toString(36).slice(2);
-  let WT_room = 'global';
-  let WT_enabled = false;
-  let WT_joined = false;
-  let WT_unsub = null;
-  let WT_suppress = false;
-
-  let LK = { connected:false, room:null, publishedTracks:[], remoteEls: new Map() };
-
-  wtToggleBtn.addEventListener('click', () => {
-    if(!WT_joined){ alert('Entre em uma sala primeiro'); return; }
-    WT_enabled = !WT_enabled;
-    wtToggleBtn.textContent = WT_enabled ? 'Watch Together: ON' : 'Watch Together: OFF';
-    wtToggleBtn.classList.toggle('active', WT_enabled);
-    if(WT_enabled){
-      connectAndPublishLiveKit(WT_room).catch(err=>{
-        console.warn('[WT][LiveKit] failed to connect/publish', err);
-        disconnectLiveKit().catch(()=>{});
-        WT_enabled = false;
-        wtToggleBtn.textContent = 'Watch Together: OFF';
-        wtToggleBtn.classList.remove('active');
-        wtStatus.textContent = `Conectado (fallback) ${WT_room} — LiveKit falhou`;
-        alert('LiveKit falhou — usando fallback via Firestore. Veja console para detalhes.');
-      });
-    } else {
-      disconnectLiveKit();
-    }
-  });
-
-  wtJoinBtn.addEventListener('click', () => {
-    WT_room = (wtRoomInput.value || 'global').trim();
-    if(WT_unsub){ WT_unsub(); WT_unsub = null; }
-    const ref = db.doc('watchRooms/' + WT_room);
-    WT_unsub = ref.onSnapshot(snap => { if(snap.exists) handleRemoteAction(snap.data()); });
-    WT_joined = true;
-    wtStatus.textContent = `Conectado (${WT_room}) — modo: Firestore sync`;
-    console.log('[WT] Joined room', WT_room);
-  });
-
-  function showAudioBtn(){
-    if(watchModal.querySelector('.wt-audio-btn')) return;
-    const audioBtn = document.createElement('button');
-    audioBtn.className = 'wt-audio-btn';
-    audioBtn.textContent = 'Ativar áudio';
-    audioBtn.style.position = 'absolute';
-    audioBtn.style.top = '10px';
-    audioBtn.style.right = '10px';
-    audioBtn.style.zIndex = '9999';
-    audioBtn.style.padding = '8px 12px';
-    audioBtn.style.border = 'none';
-    audioBtn.style.borderRadius = '10px';
-    audioBtn.style.background = '#1f8a42';
-    audioBtn.style.color = '#fff';
-    audioBtn.style.cursor = 'pointer';
-    watchModal.appendChild(audioBtn);
-    audioBtn.addEventListener('click', async () => { wtVideo.muted = false; await wtVideo.play().catch(()=>{}); audioBtn.remove(); });
-  }
-
-  function writeAction(type){
-    if(!WT_enabled) return;
-    if(LK.connected){
-      try{
-        const payload = JSON.stringify({ type, time: wtVideo.currentTime, clientId: WT_clientId });
-        LK.room && LK.room.localParticipant && LK.room.localParticipant.publishData && LK.room.localParticipant.publishData(new TextEncoder().encode(payload), { topic: 'watch-together' });
-      }catch(e){ console.warn('[WT][LiveKit] publishData failed', e); }
-      return;
-    }
-    db.doc('watchRooms/' + WT_room).set({ lastAction: { type, time: wtVideo.currentTime, clientId: WT_clientId } }, { merge:true });
-  }
-
-  wtVideo.addEventListener('play', () => { if(!WT_suppress) writeAction('play'); });
-  wtVideo.addEventListener('pause', () => { if(!WT_suppress) writeAction('pause'); });
-  wtVideo.addEventListener('seeked', () => { if(!WT_suppress) writeAction('seek'); });
-
-  function handleRemoteAction(data){
-    const a = data.lastAction;
-    if(!a || a.clientId === WT_clientId || !WT_enabled) return;
-    WT_suppress = true;
-    wtVideo.currentTime = a.time;
-    if(a.type === 'play'){
-      const p = wtVideo.play();
-      if(p) p.catch(() => { wtVideo.muted = true; wtVideo.play().catch(()=>{}); showAudioBtn(); });
-    }
-    if(a.type === 'pause'){ wtVideo.pause(); }
-    setTimeout(() => WT_suppress = false, 300);
-  }
-
-  async function fetchLiveKitToken(room, identity) {
-    const query = new URLSearchParams({ room, identity }).toString();
-    const candidates = [
-      `${LIVEKIT_TOKEN_SERVER}/token?${query}`,
-      `${LIVEKIT_TOKEN_SERVER}/session?${query}`,
-      `${LIVEKIT_TOKEN_SERVER}/get-token?${query}`,
-    ];
-    for(const url of candidates){
-      try{
-        const res = await fetch(url, { method:'GET', mode:'cors' });
-        if(!res.ok){ console.warn('[WT] token endpoint returned', res.status, url); continue; }
-        const data = await res.json();
-        const token = data?.token || data?.accessToken || data?.access_token;
-        if(token && typeof token === 'string' && token.length > 20){ console.log('[WT] token fetched from', url); return token; }
-      }catch(e){ console.warn('[WT] token fetch candidate failed', url, e); }
-    }
-    throw new Error('[WT][LiveKit] token fetch failed (todos endpoints)');
-  }
-
-  function getLiveKitConnect() {
-    if(typeof window.connect === 'function') return window.connect;
-    if(window.LivekitClient && typeof window.LivekitClient.connect === 'function') return window.LivekitClient.connect.bind(window.LivekitClient);
-    if(window.LivekitClient && typeof window.LivekitClient === 'object' && typeof window.LivekitClient.Room === 'function') {
-      return async function(url, token, opts){
-        const Room = window.LivekitClient.Room;
-        const room = new Room();
-        if(typeof room.connect === 'function'){ await room.connect(url, token, opts); return room; }
-        if(typeof window.LivekitClient.connect === 'function'){ const r = await window.LivekitClient.connect(url, token, opts); return r; }
-        throw new Error('LivekitClient connect API não encontrada');
-      };
-    }
-    if(window.LiveKit && typeof window.LiveKit.connect === 'function') return window.LiveKit.connect.bind(window.LiveKit);
-    if(window.livekit && typeof window.livekit.connect === 'function') return window.livekit.connect.bind(window.livekit);
-    if(window.livekitClient && typeof window.livekitClient.connect === 'function') return window.livekitClient.connect.bind(window.livekitClient);
-    return null;
-  }
-
-  // Robust subscribe to a publication (tries events, .subscribe(), and handles many SDK shapes)
-  async function subscribePublication(pub, participant){
-    if(!pub) return;
-    try{
-      console.log('[WT] attempting subscribePublication', { publ: pub, participant: participant?.identity || participant?.sid });
-      // if publication already has a track and isSubscribed -> attach
-      if(pub.track && pub.isSubscribed){
-        attachTrack(pub.track, pub, participant);
+    // se seu chat exige usuário ativo
+    if (typeof currentUser !== 'undefined' && typeof activePeer !== 'undefined') {
+      if (!currentUser || !activePeer) {
+        if (typeof toast === 'function') toast('Abra um chat primeiro');
         return;
       }
-      // some builds expose .on for events like 'subscribed', 'subscriptionSucceeded', 'trackSubscribed'
-      const tryAttachIfTrack = (maybeTrack) => { if(maybeTrack) attachTrack(maybeTrack, pub, participant); };
-      if(pub.on){
-        ['subscribed','subscriptionSucceeded','trackSubscribed','subscribedTrack','subscription_ok'].forEach(ev=>{
-          try{ pub.on(ev, (arg1, arg2) => {
-            // event shapes vary: sometimes (track, publication) or (publication)
-            if(arg1 && arg1.kind) tryAttachIfTrack(arg1);
-            else if(arg2 && arg2.kind) tryAttachIfTrack(arg2);
-            else if(arg1 && arg1.track) tryAttachIfTrack(arg1.track);
-          }); }catch(e){}
-        });
-      }
-      // some builds have .subscribe() method on publication
-      if(typeof pub.subscribe === 'function'){
-        try{
-          const maybe = await pub.subscribe();
-          if(maybe && maybe.kind) { attachTrack(maybe, pub, participant); return; }
-          // some subscribe resolves to publication itself or undefined
-        }catch(e){ console.warn('[WT] publication.subscribe() failed', e); }
-      }
-      // other SDK shapes expose participant.subscribe(publication)
-      if(participant && typeof participant.subscribe === 'function'){
-        try{
-          const maybe2 = await participant.subscribe(pub);
-          if(maybe2 && maybe2.kind) { attachTrack(maybe2, pub, participant); return; }
-        }catch(e){}
-      }
-      // fallback: try to attach pub.track if it appears later; poll a few times
-      let attempts = 0;
-      const maxAttempts = 8;
-      const poll = setInterval(()=>{
-        attempts++;
-        if(pub.track && !pub._attachedOnce){
-          pub._attachedOnce = true;
-          attachTrack(pub.track, pub, participant);
-          clearInterval(poll);
-        } else if(attempts >= maxAttempts) {
-          clearInterval(poll);
-        }
-      }, 400);
-    }catch(e){ console.warn('[WT] subscribePublication err', e); }
-  }
+    }
 
-  // attach remote track helper
-  function attachTrack(track, publication, participant){
-    try{
-      if(!track) return;
-      // if track has attach() use it (common)
-      let el = null;
-      if(typeof track.attach === 'function') el = track.attach();
-      if(!el){
-        // fallback create element
-        el = document.createElement(track.kind === 'audio' ? 'audio' : 'video');
-        if(track instanceof MediaStreamTrack){
-          const ms = new MediaStream([track]);
-          el.srcObject = ms;
-        } else if(track.track){
-          const ms = new MediaStream([track.track]);
-          el.srcObject = ms;
-        }
-      }
-      if(!el) return;
-      el.autoplay = true;
-      el.controls = true;
-      el.style.maxWidth = '100%';
-      el.style.borderRadius = '8px';
-      let remoteContainer = watchModal.querySelector('.watch-remote-container');
-      if(!remoteContainer){
-        remoteContainer = document.createElement('div');
-        remoteContainer.className = 'watch-remote-container';
-        remoteContainer.style.marginTop = '10px';
-        watchModal.querySelector('.watch-card').appendChild(remoteContainer);
-      }
-      const uid = participant?.sid || (publication && publication.trackSid) || Math.random().toString(36).slice(2);
-      // avoid duplicates: if we already attached this uid, skip
-      if(LK.remoteEls.has(uid)) {
-        console.log('[WT] track already attached for uid', uid);
-        return;
-      }
-      LK.remoteEls.set(uid, el);
-      remoteContainer.appendChild(el);
-      console.log('[WT][LiveKit] attached track', { participant: participant?.identity || participant?.sid, kind: track.kind || (track.track && track.track.kind), uid });
-    }catch(e){ console.warn('[WT][LiveKit] attachTrack err', e); }
-  }
+    watchModal.style.display = 'flex';
 
-  // subscribe to all existing publications in the room (called after connect)
-  async function subscribeToExistingPublications(roomObj){
-    try{
-      if(!roomObj) return;
-      // go through participants
-      (roomObj.participants || []).forEach(p => {
-        try{
-          // publications can be in different properties
-          const pubs = []
-            .concat(p.tracks || [])
-            .concat(p.publications || [])
-            .concat(p.audioTracks || [])
-            .concat(p.videoTracks || []);
-          pubs.forEach(pub => subscribePublication(pub, p));
-          // also listen to future participant-level publications
-          if(p.on){
-            try{ p.on('trackPublished', (publication) => subscribePublication(publication, p)); }catch(e){}
-            try{ p.on('published', (publication) => subscribePublication(publication, p)); }catch(e){}
-          }
-        }catch(e){ console.warn('[WT] subscribeToExistingPublications participant loop err', e); }
+    // inicia watch together
+    if (typeof initWatchTogether === 'function') {
+      initWatchTogether({
+        roomId:
+          (typeof currentUser !== 'undefined' && typeof activePeer !== 'undefined')
+            ? [currentUser, activePeer].sort().join('__')
+            : 'sala-teste',
+        isHost: true
       });
-      // room-level trackPublished
-      if(roomObj.on){
-        try{ roomObj.on('trackPublished', (publication, participant) => subscribePublication(publication, participant)); }catch(e){}
-        try{ roomObj.on('trackSubscribed', (track, publication, participant) => attachTrack(track, publication, participant)); }catch(e){}
-      }
-    }catch(e){ console.warn('[WT] subscribeToExistingPublications err', e); }
-  }
-
-  async function connectAndPublishLiveKit(room) {
-    if(LK.connected && LK.room) return;
-    wtStatus.textContent = `Conectando LiveKit...`;
-    try{ await wtVideo.play().catch(()=>{}); }catch(e){}
-    const identity = `wt_${WT_clientId}_${Math.floor(Math.random()*10000)}`;
-    let token = null;
-    try{ token = await fetchLiveKitToken(room, identity); }catch(err){ console.warn('[WT][LiveKit] token fetch failed', err); throw err; }
-
-    let connectFunc = getLiveKitConnect();
-    if(!connectFunc){
-      const esmCandidates = [
-        'https://cdn.jsdelivr.net/npm/livekit-client@2.16.1/dist/esm/index.js',
-        'https://unpkg.com/livekit-client@2.16.1/dist/esm/index.js'
-      ];
-      for(const u of esmCandidates){
-        try{
-          const mod = await import(u);
-          connectFunc = mod.connect || mod.default?.connect || mod.LivekitClient?.connect || mod.LivekitClient;
-          if(connectFunc) break;
-        }catch(e){ console.warn('[WT][LiveKit] dynamic import failed for', u, e); }
-      }
     }
-    if(!connectFunc) connectFunc = getLiveKitConnect();
-    if(!connectFunc) throw new Error('LiveKit SDK não está disponível (CDN bloqueado ou não carregado).');
+  });
+}
 
-    let roomObj = null;
-    try{
-      roomObj = await connectFunc(LIVEKIT_WS, token, { autoSubscribe: true });
-      LK.room = roomObj;
-      LK.connected = true;
-      wtStatus.textContent = `LiveKit conectado (${room})`;
-      console.log('[WT][LiveKit] connected ', roomObj);
-    }catch(e){
-      console.error('[WT][LiveKit] connect failed', e);
-      try{ if(roomObj && roomObj.disconnect) await roomObj.disconnect(); }catch(err){}
-      throw e;
+if (watchCloseBtn && watchModal) {
+  watchCloseBtn.addEventListener('click', () => {
+    watchModal.style.display = 'none';
+
+    // pausa o vídeo
+    try {
+      const watchPlayer = document.getElementById('watchPlayer');
+      if (watchPlayer) watchPlayer.pause();
+    } catch (e) {}
+
+    // encerra watch together
+    if (typeof destroyWatchTogether === 'function') {
+      destroyWatchTogether();
     }
-
-    // first, subscribe to any existing publications (important if host already published)
-    try{
-      await subscribeToExistingPublications(roomObj);
-    }catch(e){ console.warn('[WT] subscribeToExistingPublications failed', e); }
-
-    // add listeners to attach future subscriptions reliably
-    try{
-      if(roomObj.on){
-        roomObj.on('participantConnected', (p) => {
-          console.log('[WT] participantConnected', p.identity || p.sid);
-          // subscribe to their existing pubs
-          try{
-            const pubs = [].concat(p.tracks || []).concat(p.publications || []).concat(p.audioTracks || []).concat(p.videoTracks || []);
-            pubs.forEach(pub => subscribePublication(pub, p));
-            if(p.on){
-              try{ p.on('trackPublished', (publication) => subscribePublication(publication, p)); }catch(e){}
-              try{ p.on('trackSubscribed', (track, publication) => attachTrack(track, publication, p)); }catch(e){}
-            }
-          }catch(e){ console.warn('[WT] participantConnected handler err', e); }
-        });
-
-        // also try room-level events for new publications/subscriptions
-        try{ roomObj.on('trackPublished', (publication, participant) => subscribePublication(publication, participant)); }catch(e){}
-        try{ roomObj.on('trackSubscribed', (track, publication, participant) => attachTrack(track, publication, participant)); }catch(e){}
-      }
-    }catch(e){ console.warn('[WT] add listeners failed', e); }
-
-    // publish local captureStream tracks (if available) — host will do this, guests may not have captureStream but still receive
-    try{
-      let mediaStream = null;
-      if(typeof wtVideo.captureStream === 'function'){
-        try{ mediaStream = wtVideo.captureStream(); }catch(e){ console.warn('[WT] captureStream failed', e); }
-      } else if(typeof wtVideo.mozCaptureStream === 'function'){
-        try{ mediaStream = wtVideo.mozCaptureStream(); }catch(e){}
-      }
-      if(mediaStream){
-        const tracks = mediaStream.getTracks();
-        for(const t of tracks){
-          try{
-            if(LK.room && LK.room.localParticipant && LK.room.localParticipant.publishTrack){
-              const pub = await LK.room.localParticipant.publishTrack(t, { name: 'watch-video', source: 'screen' });
-              LK.publishedTracks.push(pub);
-              console.log('[WT] published track ', { kind: t.kind, publication: pub });
-            } else {
-              console.warn('[WT] publish API not available on this SDK build');
-            }
-          }catch(err){
-            console.warn('[WT] publishTrack err', err);
-          }
-        }
-        wtStatus.textContent = `LiveKit stream publicado (${room})`;
-      } else {
-        // no captureStream: this client will subscribe only (guest typical case)
-        console.log('[WT] no captureStream: acting as subscriber only');
-      }
-    }catch(e){
-      console.warn('[WT][LiveKit] error capturing/publishing', e);
-      try{ await disconnectLiveKit(); }catch(err){}
-      throw e;
-    }
-
-    // also listen for data messages (watch-together sync) if available
-    try{
-      roomObj.on && roomObj.on('dataReceived', (payload, participant) => {
-        try{
-          const txt = (new TextDecoder()).decode(payload);
-          const d = JSON.parse(txt);
-          if(d && d.type && d.time != null && participant && participant.identity !== identity){
-            WT_suppress = true;
-            wtVideo.currentTime = d.time;
-            if(d.type === 'play') wtVideo.play().catch(()=>{ wtVideo.muted = true; wtVideo.play().catch(()=>{}); });
-            if(d.type === 'pause') wtVideo.pause();
-            setTimeout(()=> WT_suppress = false, 300);
-          }
-        }catch(e){ /* ignore */ }
-      });
-    }catch(e){ /* ignore */ }
-  }
-
-  async function disconnectLiveKit(){
-    try{
-      if(LK && LK.room){
-        try{
-          if(LK.publishedTracks && LK.publishedTracks.length){
-            LK.publishedTracks.forEach(pub => { try{ pub.unpublish && pub.unpublish(); }catch(e){} });
-            LK.publishedTracks = [];
-          }
-          LK.remoteEls.forEach((el, key) => { try{ if(el && el.remove) el.remove(); }catch(e){} });
-          LK.remoteEls.clear();
-          if(LK.room.disconnect) await LK.room.disconnect();
-          if(LK.room.leave) await LK.room.leave();
-        }catch(e){ console.warn('[WT][LiveKit] graceful disconnect error', e); }
-      }
-    }catch(e){}
-    LK = { connected:false, room:null, publishedTracks:[], remoteEls: new Map() };
-    wtStatus.textContent = `Desconectado (LiveKit)`;
-  }
-
-});
+  });
+}
 </script>
+
+<!-- CLIENT.JS DO WATCH TOGETHER -->
+<script src="/client.js"></script>
 </body>
 </html>
