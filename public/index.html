@@ -1,0 +1,1906 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>Project — Chat</title>
+<style>
+:root{
+  --bg: #0b0b0b;
+  --card: #0f1012;
+  --muted: #9b9b9b;
+  --white: #ffffff;
+  --accent: #1f8a42;
+  --radius: 12px;
+  --header-h: 64px;
+  --glass: rgba(255,255,255,0.04);
+  --fade-duration: 360ms;
+  --brand-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  --header-gradient-top: linear-gradient(180deg,var(--card),#090909);
+  --bubble-me-bg: #0d0d0d;
+  --bubble-their-bg: #ffffff;
+  --bubble-me-text: #ffffff;
+  --bubble-their-text: #000000;
+  --btn-bg: #ffffff;
+  --btn-text: #000000;
+  --input-bg: #080808;
+  --input-text: #ffffff;
+
+  /* composer sizing fallback (JS will update this to the real height) */
+  --composer-height: 76px;
+  --composer-gap: 12px;
+}
+
+/* Basic resets */
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);font-family:var(--brand-font);color:var(--white);-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit}
+
+/* App layout */
+.app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{height:var(--header-h);display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:var(--header-gradient-top);border-bottom:1px solid rgba(255,255,255,0.03);z-index:40}
+.brand{display:flex;align-items:center;gap:12px}
+.brand svg{width:28px;height:28px}
+.brand .title{font-weight:700;letter-spacing:0.6px;font-size:16px}
+.top-actions{display:flex;gap:10px;align-items:center}
+
+/* icon button consistent & symmetric */
+.icon-btn{
+  width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;background:transparent;color:var(--white);border-radius:10px;border:1px solid var(--glass);cursor:pointer;padding:6px;-webkit-tap-highlight-color: transparent;user-select:none}
+.icon-btn svg{display:block}
+.icon-btn:hover{ background: rgba(255,255,255,0.03); transform: translateY(-2px); transition: transform .12s;}
+
+/* header "Add friend" button */
+.btn-header{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:var(--btn-bg);color:var(--btn-text);border:none;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,0.12)}
+.btn-header svg{opacity:0.9}
+.btn-header:active{transform:translateY(1px)}
+
+/* layout */
+.layout{display:flex;flex:1;min-height:0;transition:all var(--fade-duration) cubic-bezier(.2,.9,.2,1)}
+.left{width:36%;max-width:420px;min-width:260px;background:var(--card);padding:16px;box-sizing:border-box;border-right:1px solid rgba(255,255,255,0.03);transform:translateX(-110%);opacity:0;pointer-events:none;position:fixed;left:0;top:var(--header-h);bottom:0;z-index:1000;transition:transform .28s ease,opacity .28s ease}
+.layout.friends-open .left{transform:translateX(0) !important;opacity:1 !important;pointer-events:auto !important}
+.left .panel-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+
+/* profile block */
+.profile-section{display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent)}
+.profile-row{display:flex;align-items:center;gap:12px;min-width:0}
+.profile-row img{width:48px;height:48px;border-radius:10px;object-fit:cover;border:1px solid rgba(255,255,255,0.03);flex:0 0 48px}
+.profile-name{font-weight:700;color:var(--white);flex:1;min-width:0;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.profile-bio{font-size:0.85rem;color:var(--muted);max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* friends list */
+.section-title{font-size:.86rem;color:var(--muted);margin-top:4px;margin-bottom:6px}
+.friends-list{overflow:auto;flex:1;padding-right:6px;display:block;min-height:80px}
+.friend{display:flex;gap:10px;align-items:center;padding:10px;border-radius:10px;cursor:pointer;transition:background .12s,transform .08s}
+.friend img{width:44px;height:44px;border-radius:8px;object-fit:cover;border:1px solid rgba(255,255,255,0.03);flex:0 0 44px}
+.friend .meta{display:flex;flex-direction:column;min-width:0}
+.friend .name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
+.friend .small{font-size:0.85rem;color:var(--muted);display:inline-block}
+.status-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-left:8px;border:2px solid rgba(11,11,11,1)}
+.status-online{background:var(--accent); box-shadow:0 0 6px rgba(31,138,66,0.14)}
+.status-offline{background:#666; box-shadow:none}
+
+/* center chat */
+/* reduced padding-bottom — messages now reserve space equal to composer via .messages padding-bottom */
+.center{flex:1;display:flex;flex-direction:column;padding:12px;box-sizing:border-box;min-width:0;transition:margin var(--fade-duration) cubic-bezier(.2,.9,.2,1)}
+.layout.friends-open .center{margin-left:0}
+.chat-header{display:flex;align-items:center;gap:12px;padding-bottom:8px}
+.peer-avatar{width:48px;height:48px;border-radius:10px;object-fit:cover;border:1px solid rgba(255,255,255,0.03);display:inline-block;flex:0 0 48px;cursor:pointer}
+.peer-name{font-weight:700; cursor:pointer}
+.peer-sub{font-size:0.9rem;color:var(--muted);display:flex;align-items:center;gap:8px}
+
+/* messages */
+/* ensure messages reserve an area equal to composer height + small gap so last message isn't hidden by composer */
+.messages{flex:1;overflow:auto;padding:6px;padding-bottom:calc(var(--composer-height) + var(--composer-gap));display:flex;flex-direction:column;gap:8px;width:100%;scroll-behavior:smooth}
+.msg-row{display:flex;align-items:flex-end;gap:8px;width:100%;position:relative}
+.msg{max-width: calc(100% - 72px);padding:10px 14px;border-radius:14px;word-break:break-word;box-shadow:0 8px 24px rgba(0,0,0,0.45);display:flex;flex-direction:column;text-align:left;align-items:flex-start;flex: 0 1 auto;position:relative}
+.msg.me{background:var(--bubble-me-bg);color:var(--bubble-me-text);border:1px solid rgba(255,255,255,0.03)}
+.msg.their{background:var(--bubble-their-bg);color:var(--bubble-their-text);border:1px solid rgba(0,0,0,0.04)}
+.msg .meta{display:block;font-size:0.78rem;margin-bottom:6px;font-weight:700;line-height:1;text-align:left;width:100%}
+.msg-avatar{width:36px;height:36px;border-radius:10px;object-fit:cover;border:1px solid rgba(255,255,255,0.03);flex:0 0 36px;align-self:flex-end;cursor:pointer}
+/* imagem: comportamento responsivo — limita tamanho no desktop, mantém bom visual no mobile */
+.msg-image{max-width: min(80vw, 640px);width:auto;height:auto;border-radius:10px;display:block;margin-top:8px;cursor:pointer;object-fit:cover;max-height:25vh}
+@media (min-width:900px){
+  .msg-image{max-width:480px}
+}
+@media (min-width:1200px){
+  .msg-image{max-width:640px}
+}
+
+/* composer */
+.composer{position:fixed;right:12px;left:12px;bottom:12px;display:flex;flex-direction:column;gap:8px;padding:10px;background:var(--card);border-radius:14px;border-top:1px solid rgba(255,255,255,0.03);box-shadow:0 10px 30px rgba(0,0,0,0.6);z-index:30}
+.composer-row{display:flex;gap:8px;align-items:center;width:100%}
+.composer input[type="text"]{flex:1;padding:12px 14px;border-radius:10px;background:var(--input-bg);border:1px solid rgba(255,255,255,0.03);color:var(--input-text);outline:none}
+.btn{padding:10px 12px;border-radius:10px;border:none;cursor:pointer}
+.btn:active{transform:scale(.98)}
+.btn-send{background:var(--btn-bg);color:var(--btn-text);font-weight:700}
+.btn-plain{background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.03)}
+
+/* reply preview */
+.reply-preview{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03)}
+.reply-preview .small{font-size:12px;color:var(--muted)}
+.reply-preview .text{font-size:13px;max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* action popup */
+.msg-action-popup{position:fixed;z-index:22000;background:#0f1012;border:1px solid rgba(255,255,255,0.05);padding:8px;border-radius:10px;box-shadow:0 18px 40px rgba(0,0,0,0.6);display:flex;gap:8px;align-items:center}
+.msg-action-popup button{background:transparent;color:var(--white);border:none;padding:8px 10px;border-radius:8px;cursor:pointer}
+.msg-action-popup button:hover{background:rgba(255,255,255,0.02)}
+
+/* modal base */
+.modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;z-index:20000 !important}
+.modal-card{width:360px;background:#0f1012;padding:16px;border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.02)}
+.modal-card h3{margin:0 0 8px 0}
+
+/* peer profile (detailed) */
+.peer-profile-card{width:420px;max-width:92%;background:linear-gradient(180deg,var(--card),#0b0b0b);padding:18px;border-radius:14px;border:1px solid rgba(255,255,255,0.03);display:flex;gap:12px;align-items:flex-start}
+.peer-profile-avatar{width:120px;height:120px;border-radius:14px;object-fit:cover;border:1px solid rgba(255,255,255,0.04)}
+.peer-profile-main{flex:1;min-width:0}
+.peer-profile-main h2{margin:0 0 6px 0;font-size:20px}
+.peer-profile-main .meta{color:var(--muted);font-size:13px;margin-bottom:8px}
+.peer-profile-main .bio{margin-top:8px;color:var(--muted);font-size:14px;line-height:1.4}
+
+/* theme swatches */
+.theme-grid{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.theme-swatch{width:52px;height:52px;border-radius:8px;cursor:pointer;border:2px solid rgba(255,255,255,0.06);box-shadow:0 8px 30px rgba(0,0,0,0.5)}
+
+/* splash */
+#splashScreen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9999;transition:opacity .45s}
+#splashScreen.hidden{opacity:0;pointer-events:none}
+.splash-inner{display:flex;flex-direction:column;align-items:center;gap:10px;transform-origin:center center;animation: splashIn .8s cubic-bezier(.2,.9,.2,1) both}
+@keyframes splashIn {0%{ transform: translateY(8px) scale(.98); opacity:0 }60%{ transform: translateY(-4px) scale(1.02); opacity:1 }100%{ transform: translateY(0) scale(1); opacity:1 }}
+.splash-logo{font-weight:900;font-size:40px;letter-spacing:6px}
+.splash-sub{font-size:12px;color:rgba(255,255,255,0.6);margin-top:4px}
+
+/* === MOBILE: keep header controls on same line and shrink them to fit === */
+/* allow brand to shrink so it doesn't push actions out */
+.brand {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* prefer single row for actions */
+.top-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap; /* keep items on one line */
+}
+
+/* mobile-specific tweaks to reduce sizes and hide long text */
+@media (max-width: 900px) {
+  header {
+    /* keep header height fixed so it doesn't grow vertically */
+    height: var(--header-h);
+    padding: 0 10px;
+    align-items: center;
+  }
+
+  /* slightly reduce brand title to yield space */
+  .brand .title {
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* smaller icon buttons */
+  .icon-btn {
+    width: 36px;
+    height: 36px;
+    padding: 4px;
+    border-radius: 8px;
+  }
+  .icon-btn svg { width: 16px; height: 16px; }
+
+  /* compact "Adicionar" button: hide text label, keep icon */
+  .btn-header {
+    padding: 6px 8px;
+    gap: 6px;
+    font-size: 12px;
+    border-radius: 8px;
+  }
+  .btn-header span { display: none; }
+
+  /* compact Entrar button */
+  #btnLogin {
+    padding: 6px 8px;
+    font-size: 12px;
+    border-radius: 8px;
+    min-width: auto;
+  }
+
+  /* reduce gaps a bit */
+  .top-actions { gap: 6px; }
+
+  /* prevent buttons from shrinking weirdly */
+  .top-actions > * { flex-shrink: 0; }
+
+  /* extreme small screens fallback: allow horizontal scroll if absolutely necessary */
+  /* this will only trigger below 320-360px where fitting is impossible */
+  @media (max-width: 360px) {
+    .top-actions { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  }
+}
+
+/* responsive tweaks (kept from original) */
+@media (max-width:900px){
+  header{padding:0 12px}
+  .left{position:fixed;left:0;top:var(--header-h);bottom:0;transform:translateX(-6%);width:86%;max-width:none;min-width:0;padding:12px;border-radius:0 8px 8px 0;box-shadow:0 20px 60px rgba(0,0,0,0.7)}
+  .layout.friends-open .left{transform:translateX(0) !important}
+  .layout.friends-open .center{margin-left:0}
+  .center{padding:8px}
+  .msg{max-width:85%}
+  .composer{position:fixed;left:0;right:0;bottom:0;border-radius:0;padding:10px 12px;height:auto;display:flex;flex-direction:column;align-items:center;gap:8px}
+  .composer-row{width:100%}
+}
+
+/* ===== Watch Together modal styles ===== */
+.watch-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);align-items:center;justify-content:center;z-index:21000}
+.watch-card{width:880px;max-width:96%;background:linear-gradient(180deg,#0f1012,#0b0b0b);padding:14px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);box-shadow:0 30px 80px rgba(0,0,0,0.6)}
+.watch-video{width:100%;background:black;border-radius:8px;display:block}
+.watch-controls{display:flex;gap:8px;align-items:center;margin-top:10px}
+.watch-controls input[type="text"]{padding:8px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--white);min-width:140px}
+.watch-controls .btn{padding:8px 12px;border-radius:8px}
+.watch-status{margin-left:8px;color:var(--muted);font-size:13px}
+.watch-legend{font-size:13px;color:var(--muted);margin-top:8px}
+.watch-toggle.active{background:var(--accent);color:#fff}
+.watch-close{position:absolute;top:10px;right:12px;background:transparent;border:none;color:var(--muted);cursor:pointer}
+@media (max-width:600px){
+  .watch-card{width:96%}
+  .watch-controls{flex-direction:column;align-items:stretch}
+}
+</style>
+</head>
+<body>
+
+<!-- SPLASH -->
+<div id="splashScreen" aria-hidden="false">
+  <div class="splash-inner" role="img" aria-label="Project splash">
+    <div class="splash-logo" style="color:var(--white)">Project</div>
+    <div class="splash-sub">Minimal private chat</div>
+  </div>
+</div>
+
+<div class="app" aria-hidden="false">
+  <header>
+    <div class="brand" aria-hidden="true">
+      <!-- restored original logo -->
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" stroke="white" stroke-opacity="0.06" stroke-width="1.6"/><path d="M7.5 12h9" stroke="white" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <div class="title">Project</div>
+    </div>
+
+    <div class="top-actions" role="toolbar" aria-label="Ações">
+      <button id="btnOpenFriends" type="button" class="icon-btn" aria-label="Amigos" title="Amigos" >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12a3 3 0 1 0-3-3 3 3 0 0 0 3 3z"/><path d="M4 20v-1a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v1"/></svg>
+      </button>
+
+      <button id="btnAddFriend" type="button" class="btn-header" title="Adicionar amigo" aria-label="Adicionar amigo">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#050505" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5v14M5 11h14"/></svg>
+        <span style="color:var(--btn-text)">Adicionar</span>
+      </button>
+
+      <div class="requests-badge" title="Pedidos">
+        <button id="btnRequests" type="button" class="icon-btn" title="Pedidos" aria-label="Pedidos">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0 1 18 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        </button>
+        <span id="requestsCount" class="count" style="display:none">0</span>
+      </div>
+
+      <button id="btnTheme" type="button" class="icon-btn" title="Tema" aria-label="Abrir tema">
+        <!-- new clean gear icon -->
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z"></path>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 1 1 2.27 17.3l.06-.06a1.65 1.65 0 0 0 .33-1.82"></path>
+        </svg>
+      </button>
+
+      <!-- WATCH TOGETHER button added aligned with other controls -->
+      <button id="btnWatchTogether" type="button" class="icon-btn" title="Watch Together" aria-label="Watch Together" >
+        <!-- simple play group icon -->
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3v18l14-9L5 3z"></path>
+          <circle cx="18" cy="6" r="3"></circle>
+        </svg>
+      </button>
+
+      <button id="btnLogin" class="btn btn-send" type="button" style="display:none">Entrar</button>
+
+      <button id="btnLogout" type="button" class="icon-btn" title="Sair" aria-label="Sair" style="display:none">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout" id="layoutRoot">
+    <aside class="left" id="leftPanel" aria-hidden="true">
+      <div class="panel-top">
+        <div class="title">Seu perfil</div>
+        <div class="controls" style="display:flex;gap:8px;align-items:center">
+          <!-- kept the inline edit icon near the close (as requested) -->
+          <button id="btnEditInlineIcon" class="icon-btn" title="Editar perfil" aria-label="Editar perfil">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L8 18l-4 1 1-4L16.5 3.5z"></path></svg>
+          </button>
+
+          <button id="closeFriends" class="icon-btn" title="Fechar lista" aria-label="Fechar lista">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="profile-section" role="region" aria-label="Seu perfil">
+        <div class="profile-row">
+          <img id="meAvatarLeft" src="https://via.placeholder.com/48" alt="me" data-user="">
+          <div style="display:flex;flex-direction:column;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="profile-name" id="meNameLeft">Convidado</div>
+            </div>
+            <div class="profile-bio" id="meBioLeft">Editar perfil</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sep" aria-hidden="true"></div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="section-title">Lista de amigos</div>
+      </div>
+
+      <div class="friends-list" id="friendsList" aria-live="polite"></div>
+    </aside>
+
+    <main class="center no-active" id="centerMain">
+      <div class="chat-header">
+        <img id="peerAvatarTop" class="peer-avatar" src="https://via.placeholder.com/48" style="display:none" alt="peer" data-user="">
+        <div class="peer-info">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="peer-name" id="peerName">Nenhum chat selecionado</div>
+            <span id="peerDotInline" class="status-dot status-offline" title="status-inline" style="display:none"></span>
+          </div>
+          <div class="peer-status-row" aria-hidden="false">
+            <div class="peer-sub" id="peerSub"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="empty-placeholder" id="emptyPlaceholder">Selecione um amigo para começar</div>
+
+      <div class="messages" id="messages" role="log" aria-live="polite"></div>
+
+      <div class="composer" id="composer" aria-label="Composer de mensagens">
+        <div id="replyPreview" style="display:none" class="reply-preview"></div>
+        <div class="composer-row">
+          <input id="inputText" type="text" placeholder="Digite mensagem..." autocomplete="off" disabled>
+          <button id="btnAttach" type="button" class="btn btn-plain" title="Anexar imagem">Mídia</button>
+          <input id="inputFile" type="file" accept="image/*" style="display:none">
+          <button id="btnSend" type="button" class="btn btn-send" disabled>Enviar</button>
+        </div>
+        <div id="composerImagePreview" style="display:none"></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Watch Together modal (added) -->
+<div id="watchModal" class="watch-modal" aria-hidden="true">
+  <div class="watch-card" role="dialog" aria-modal="true" aria-label="Watch Together">
+    <button class="watch-close" id="watchClose" title="Fechar">✕</button>
+    <video id="wtVideo" class="watch-video" controls preload="metadata" crossorigin="anonymous">
+      <!-- Default source - troque pelo seu vídeo ou deixe para o usuário carregar via URL abaixo -->
+      <source id="wtSource" src="sample.mp4" type="video/mp4">
+      Seu navegador não suporta o elemento video.
+    </video>
+
+    <div class="watch-controls" style="margin-top:12px">
+      <input id="wtRoom" type="text" placeholder="Sala (ex: sala1)" value="global">
+      <button id="wtJoin" class="btn btn-send" type="button">Entrar na sala</button>
+
+      <button id="wtToggle" class="btn watch-toggle" type="button">Watch Together: OFF</button>
+
+      <input id="wtUrl" type="text" placeholder="URL do vídeo (opcional)" style="flex:1" />
+      <button id="wtLoadUrl" class="btn btn-plain" type="button">Carregar</button>
+
+      <div id="wtStatus" class="watch-status">Desconectado</div>
+    </div>
+
+    <div class="watch-legend">Ao ativar, play/pause e seek serão sincronizados com participantes da mesma sala.</div>
+  </div>
+</div>
+
+<!-- Requests modal -->
+<div id="requestsModal" class="modal-backdrop">
+  <div id="requestsCard" class="modal-card">
+    <h3>Pedidos de amizade</h3>
+    <div id="requestsList"></div>
+    <div style="text-align:right;margin-top:12px">
+      <button type="button" onclick="document.getElementById('requestsModal').style.display='none'" class="btn btn-plain">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit profile modal (compact) -->
+<div id="profileModal" class="modal-backdrop">
+  <div id="profileCard" class="modal-card" style="display:flex;gap:12px;align-items:center">
+    <img id="profileAvatar" src="https://via.placeholder.com/84" alt="avatar" style="width:72px;height:72px;border-radius:12px;object-fit:cover">
+    <div style="flex:1">
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="profileName" placeholder="Nome (opcional)" style="flex:1;padding:8px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--white)">
+        <button id="btnChangeAvatar" type="button" class="btn btn-plain">Alterar</button>
+        <input id="profileFile" type="file" accept="image/*" style="display:none">
+      </div>
+      <textarea id="profileBio" placeholder="Bio (máx 200 chars)" style="width:100%;height:80px;margin-top:10px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--white);padding:8px"></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+        <button id="btnSaveProfile" type="button" class="btn btn-send">Salvar</button>
+        <button id="btnCloseProfile" type="button" class="btn btn-plain">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Peer profile modal (detailed) -->
+<div id="peerProfileModal" class="modal-backdrop" aria-hidden="true">
+  <div class="peer-profile-card" role="dialog" aria-modal="true" id="peerProfileCard">
+    <img id="peerProfileAvatar" class="peer-profile-avatar" src="https://via.placeholder.com/120" alt="avatar">
+    <div class="peer-profile-main">
+      <h2 id="peerProfileName">Nome</h2>
+      <div class="meta" id="peerProfileMeta">offline • visto por último: —</div>
+      <div class="bio" id="peerProfileBio">Bio do usuário...</div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button id="peerProfileClose" class="btn btn-plain" type="button">Fechar</button>
+        <button id="peerProfileMessage" class="btn btn-send" type="button">Abrir chat</button>
+        <button id="peerProfileAdd" class="btn btn-header" type="button" style="display:none">Adicionar</button>
+      </div>
+    </div>
+  </div>
+</div>
+<video id="player" controls playsinline></video>
+
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2.16.1/dist/livekit-client.umd.min.js"></script>
+<script src="./watch-together-final.js"></script>
+</body>
+<!-- Theme modal -->
+<div id="themeModal" class="modal-backdrop" aria-hidden="true">
+  <div class="modal-card" style="width:auto;min-width:300px">
+    <h3>Escolha um tema</h3>
+    <div style="font-size:13px;color:var(--muted)">O tema altera cor de destaque, fundos, cards e botões para imersão.</div>
+    <div class="theme-grid" id="themeGrid"></div>
+    <div style="text-align:right;margin-top:12px">
+      <button id="themeClose" class="btn btn-plain" type="button">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOGIN modal with username + password (hidden until user clicks Entrar) -->
+<div id="login-modal" class="modal-backdrop" aria-modal="true" role="dialog" style="display:none" aria-hidden="true">
+  <div id="login-card" class="modal-card">
+    <h3>Entrar</h3>
+    <input id="login-username" placeholder="Seu username" autocomplete="username" style="width:100%;padding:10px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--white)">
+    <input id="login-password" type="password" placeholder="Senha" autocomplete="current-password" style="width:100%;padding:10px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--white);margin-top:8px">
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button id="login-ok" class="btn btn-send" style="flex:1">Entrar</button>
+      <button id="create-account" class="btn btn-plain" style="flex:1">Criar conta</button>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--muted)">Usuário e senha (hash SHA-256) salvos no Firestore.</div>
+  </div>
+</div>
+
+<!-- action popup -->
+<div id="msgActionPopup" style="display:none" class="msg-action-popup" role="dialog" aria-hidden="true"></div>
+
+<!-- Firebase & Supabase -->
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-storage-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<!-- LiveKit client (UMD build) - used for Watch Together streaming (best-effort) -->
+<!-- If your environment blocks cdnjs/unpkg, this may fail and the code will fallback to Firestore sync -->
+<script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+
+<script>
+/* =========================
+   Config clients
+   ========================= */
+const SUPABASE_URL = "https://psefyuszpacdfhjrqvwd.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzZWZ5dXN6cGFjZGZoanJxdndkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3MjgwMjQsImV4cCI6MjA4MzMwNDAyNH0.E2qZxPEim9bW4P4jsHkybsbUYdInGIV19ZMXOHdQXCg";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+firebase.initializeApp({
+  apiKey: "AIzaSyBKotEIdaCZbPs3e6cX-0Pnlfa9pqomJ5o",
+  authDomain: "chat-36f52.firebaseapp.com",
+  projectId: "chat-36f52",
+  storageBucket: "chat-36f52.appspot.com"
+});
+const db = firebase.firestore();
+const storage = firebase.storage();
+</script>
+
+<script>
+/* =========================
+   DOM refs and state
+   ========================= */
+const splashScreen = document.getElementById('splashScreen');
+
+const layoutRoot = document.getElementById('layoutRoot');
+const btnOpenFriends = document.getElementById('btnOpenFriends');
+const closeFriends = document.getElementById('closeFriends');
+const friendsList = document.getElementById('friendsList');
+
+const meAvatarLeft = document.getElementById('meAvatarLeft');
+const meNameLeft = document.getElementById('meNameLeft');
+const meBioLeft = document.getElementById('meBioLeft');
+
+const btnEditInlineIcon = document.getElementById('btnEditInlineIcon');
+const profileModal = document.getElementById('profileModal');
+const btnChangeAvatar = document.getElementById('btnChangeAvatar');
+const profileFile = document.getElementById('profileFile');
+const profileAvatar = document.getElementById('profileAvatar');
+const profileName = document.getElementById('profileName');
+const profileBio = document.getElementById('profileBio');
+const btnSaveProfile = document.getElementById('btnSaveProfile');
+const btnCloseProfile = document.getElementById('btnCloseProfile');
+
+const peerAvatarTop = document.getElementById('peerAvatarTop');
+const peerName = document.getElementById('peerName');
+const peerDotInline = document.getElementById('peerDotInline');
+const peerSub = document.getElementById('peerSub');
+const messagesEl = document.getElementById('messages');
+
+const centerMain = document.getElementById('centerMain');
+const emptyPlaceholder = document.getElementById('emptyPlaceholder');
+
+const inputText = document.getElementById('inputText');
+const btnAttach = document.getElementById('btnAttach');
+const inputFile = document.getElementById('inputFile');
+const btnSend = document.getElementById('btnSend');
+const composerPreviewImg = document.getElementById('composerImagePreview');
+
+const replyPreview = document.getElementById('replyPreview');
+
+const msgActionPopup = document.getElementById('msgActionPopup');
+
+const btnAddFriend = document.getElementById('btnAddFriend');
+const btnRequests = document.getElementById('btnRequests');
+const requestsCount = document.getElementById('requestsCount');
+const requestsModal = document.getElementById('requestsModal');
+const requestsList = document.getElementById('requestsList');
+
+const peerProfileModal = document.getElementById('peerProfileModal');
+const peerProfileAvatar = document.getElementById('peerProfileAvatar');
+const peerProfileName = document.getElementById('peerProfileName');
+const peerProfileMeta = document.getElementById('peerProfileMeta');
+const peerProfileBio = document.getElementById('peerProfileBio');
+const peerProfileClose = document.getElementById('peerProfileClose');
+const peerProfileMessage = document.getElementById('peerProfileMessage');
+const peerProfileAdd = document.getElementById('peerProfileAdd');
+
+const btnTheme = document.getElementById('btnTheme');
+const themeModal = document.getElementById('themeModal');
+const themeGrid = document.getElementById('themeGrid');
+const themeClose = document.getElementById('themeClose');
+
+const btnLogout = document.getElementById('btnLogout');
+const btnLogin = document.getElementById('btnLogin');
+
+const loginModal = document.getElementById('login-modal');
+const loginUsername = document.getElementById('login-username');
+const loginPassword = document.getElementById('login-password');
+const loginOk = document.getElementById('login-ok');
+const createAccountBtn = document.getElementById('create-account');
+
+let currentUser = null;
+let profileCache = {};
+let activePeer = null;
+let unsubChat = null;
+let unsubPeer = null;
+let pendingFileLocal = null;
+let friendUnsubs = {};
+let audioCtx = null;
+let pendingReply = null;
+
+/* helpers */
+function normalize(u){ return (u||'').toString().trim().toLowerCase(); }
+function toast(m){ try{ console.log('TOAST:',m); }catch(e){} alert(m); }
+function dbg(...a){ console.log('[DBG]', ...a); }
+async function sha256Hex(text){ const enc=new TextEncoder().encode(text); const buf=await crypto.subtle.digest('SHA-256',enc); return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join(''); }
+
+/* audio */
+function ensureAudio(){ if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); return audioCtx; }
+function playSendSound(){ try{ const audio=ensureAudio(); const t=audio.currentTime; const o=audio.createOscillator(); const g=audio.createGain(); o.type='sine'; o.frequency.setValueAtTime(900,t); o.frequency.exponentialRampToValueAtTime(600,t+0.12); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.35,t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+0.22); o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t+0.25);}catch(e){console.warn('audio failed',e);} }
+function playReceiveSound(){ try{ const audio=ensureAudio(); const t=audio.currentTime; const o=audio.createOscillator(); const g=audio.createGain(); o.type='sine'; o.frequency.setValueAtTime(1600,t); o.frequency.exponentialRampToValueAtTime(2200,t+0.06); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.28,t+0.01); g.gain.setValueAtTime(0.0001,t+0.12); o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t+0.12);}catch(e){console.warn('receive audio failed',e);} }
+
+/* splash -> show login (or show Entrar in header if not remembered) */
+function hideSplashAndShowLogin(){
+  splashScreen.classList.add('hidden');
+  setTimeout(()=> {
+    try{ splashScreen.remove(); }catch(e){}
+    const remembered = localStorage.getItem('project_user');
+    if(remembered){
+      restoreSession(remembered);
+    } else {
+      try{ loginModal.style.display = 'none'; }catch(e){}
+      try{ btnLogin.style.display = 'inline-flex'; }catch(e){}
+    }
+  }, 700);
+}
+window.addEventListener('load', ()=> setTimeout(hideSplashAndShowLogin, 900));
+
+/* presence helper */
+async function setOnlineState(on){
+  if(!currentUser) return;
+  try{
+    await db.doc('users/'+currentUser).update({ online: !!on, lastSeen: firebase.firestore.FieldValue.serverTimestamp() });
+  }catch(e){
+    if(on){
+      await db.doc('users/'+currentUser).set({ name: currentUser, bio:'', avatar:'', friends:[], online:true, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true });
+    }
+  }
+}
+window.addEventListener('beforeunload', ()=> { if(currentUser) db.doc('users/'+currentUser).update({ online:false, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{}); });
+
+/* =========================
+   AUTH create/login + session persist
+   ========================= */
+createAccountBtn.addEventListener('click', async ()=>{
+  const raw = (loginUsername.value||'').trim();
+  const pw = (loginPassword.value||'').trim();
+  if(!raw || !pw) return toast('Preencha usuário e senha (mín 6 caracteres)');
+  if(pw.length < 6) return toast('Senha mínima de 6 caracteres');
+  const id = normalize(raw);
+  try{
+    const ref = db.doc('users/'+id);
+    const snap = await ref.get();
+    if(snap.exists) return toast('Usuário já existe');
+    const hash = await sha256Hex(pw);
+    await ref.set({ name: raw, passwordHash: hash, bio:'', avatar:'', friends:[], online:false, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+    toast('Conta criada. Agora faça login.');
+  }catch(e){ console.error('create account err', e); toast('Erro ao criar conta'); }
+});
+
+loginOk.addEventListener('click', async ()=>{
+  const raw = (loginUsername.value||'').trim();
+  const pw = (loginPassword.value||'').trim();
+  if(!raw || !pw) return toast('Preencha usuário e senha');
+  const id = normalize(raw);
+  try{
+    const ref = db.doc('users/'+id);
+    const snap = await ref.get();
+    if(!snap.exists) return toast('Usuário não encontrado');
+    const data = snap.data() || {};
+    const stored = data.passwordHash || '';
+    const hash = await sha256Hex(pw);
+    if(stored !== hash) return toast('Senha inválida');
+    currentUser = id;
+    try{ localStorage.setItem('project_user', currentUser); }catch(e){}
+    profileCache[currentUser] = { name: data.name || raw, avatar: data.avatar || '', bio: data.bio || '', online: data.online || false, lastSeen: data.lastSeen || null };
+    meNameLeft.textContent = profileCache[currentUser].name || currentUser;
+    meBioLeft.textContent = profileCache[currentUser].bio || '';
+    meAvatarLeft.src = profileCache[currentUser].avatar || 'https://via.placeholder.com/48';
+    meAvatarLeft.dataset.user = currentUser;
+    try{ loginModal.remove(); }catch(e){ loginModal.style.display='none'; }
+    centerMain.classList.add('no-active');
+    inputText.value = '';
+    btnSend.disabled = true;
+    inputText.disabled = true;
+    try{ btnLogin.style.display = 'none'; }catch(e){}
+    btnLogout.style.display = 'inline-flex';
+    await setOnlineState(true);
+    watchFriends();
+    watchRequests();
+  }catch(e){ console.error('login err', e); toast('Erro ao logar'); }
+});
+
+/* Restore session if username is in localStorage (no password) */
+async function restoreSession(username){
+  try{
+    const id = normalize(username);
+    const ref = db.doc('users/'+id);
+    const snap = await ref.get();
+    if(!snap.exists){
+      localStorage.removeItem('project_user');
+      try{ loginModal.style.display = 'none'; }catch(e){}
+      try{ btnLogin.style.display = 'inline-flex'; }catch(e){}
+      return;
+    }
+    currentUser = id;
+    const data = snap.data() || {};
+    profileCache[currentUser] = { name: data.name || id, avatar: data.avatar || '', bio: data.bio || '', online: data.online || false, lastSeen: data.lastSeen || null };
+    meNameLeft.textContent = profileCache[currentUser].name || currentUser;
+    meBioLeft.textContent = profileCache[currentUser].bio || '';
+    meAvatarLeft.src = profileCache[currentUser].avatar || 'https://via.placeholder.com/48';
+    meAvatarLeft.dataset.user = currentUser;
+    try{ loginModal.remove(); }catch(e){ loginModal.style.display='none'; }
+    centerMain.classList.add('no-active');
+    inputText.value = '';
+    btnSend.disabled = true;
+    inputText.disabled = true;
+    try{ btnLogin.style.display = 'none'; }catch(e){}
+    btnLogout.style.display = 'inline-flex';
+    await setOnlineState(true);
+    watchFriends();
+    watchRequests();
+  }catch(e){ console.error('restore session err', e); loginModal.style.display='flex'; }
+}
+
+/* Logout */
+btnLogout.addEventListener('click', async ()=>{ 
+  if(!currentUser) { btnLogin.style.display = 'inline-flex'; localStorage.removeItem('project_user'); location.reload(); return; }
+  try{ await setOnlineState(false); }catch(e){}
+  localStorage.removeItem('project_user');
+  currentUser = null;
+  profileCache = {};
+  activePeer = null;
+  try{ btnLogout.style.display = 'none'; }catch(e){}
+  try{ btnLogin.style.display = 'inline-flex'; }catch(e){}
+  try{ loginModal.style.display = 'none'; }catch(e){}
+});
+
+/* keyboard quick submit */
+loginUsername.addEventListener('keydown', e=> { if(e.key==='Enter') loginOk.click(); });
+loginPassword.addEventListener('keydown', e=> { if(e.key==='Enter') loginOk.click(); });
+
+/* UI toggles */
+btnOpenFriends.addEventListener('click', ()=> {
+  const opened = layoutRoot.classList.toggle('friends-open');
+  document.getElementById('leftPanel').setAttribute('aria-hidden', opened ? 'false' : 'true');
+  btnOpenFriends.classList.add('click-pop');
+  setTimeout(()=> btnOpenFriends.classList.remove('click-pop'), 140);
+});
+closeFriends.addEventListener('click', ()=> { layoutRoot.classList.remove('friends-open'); document.getElementById('leftPanel').setAttribute('aria-hidden','true'); });
+
+// header 'Entrar' opens login modal
+try{ btnLogin.addEventListener('click', ()=> { loginModal.style.display = 'flex'; try{ loginUsername.focus(); }catch(e){} }); }catch(e){}
+
+// left-panel edit icon opens profile modal (EDIT PROFILE)
+btnEditInlineIcon.addEventListener('click', ()=> {
+  if(!currentUser){ toast('Faça login primeiro'); return; }
+  profileModal.style.display = 'flex';
+  profileAvatar.src = profileCache[currentUser]?.avatar || meAvatarLeft.src || 'https://via.placeholder.com/84';
+  profileName.value = profileCache[currentUser]?.name || '';
+  profileBio.value = profileCache[currentUser]?.bio || '';
+});
+
+/* Close profile modal when clicking backdrop */
+profileModal.addEventListener('click', (e)=>{
+  if(e.target === profileModal) profileModal.style.display = 'none';
+});
+btnCloseProfile.addEventListener('click', ()=> profileModal.style.display='none');
+
+/* header theme button opens theme modal */
+btnTheme.addEventListener('click', ()=> {
+  themeModal.style.display = 'flex';
+});
+themeClose.addEventListener('click', ()=> themeModal.style.display = 'none');
+
+/* Add friend flow */
+btnAddFriend.addEventListener('click', async () => {
+  if (!currentUser) return toast('Faça login primeiro');
+  const raw = prompt('Digite o username do amigo:');
+  if (!raw) return;
+  const target = normalize(raw);
+  if (target === currentUser) return toast('Você não pode se adicionar.');
+  try{
+    const snap = await db.doc('users/' + target).get();
+    if (!snap.exists) return toast('Usuário não encontrado.');
+    await db.collection('friendRequests').add({
+      from: currentUser,
+      to: target,
+      status: 'pending',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    toast('Pedido enviado!');
+  }catch(e){ console.error('add friend err', e); toast('Erro ao enviar pedido'); }
+});
+
+/* Requests watcher */
+let currentRequests = {};
+function watchRequests(){
+  if(!currentUser) return;
+  db.collection('friendRequests').where('to','==',currentUser).where('status','==','pending')
+    .onSnapshot(snap=>{
+      currentRequests = {};
+      requestsList.innerHTML = '';
+      if(snap.empty){
+        requestsCount.style.display = 'none';
+        return;
+      }
+      requestsCount.style.display = 'inline-block';
+      requestsCount.textContent = String(snap.size);
+      snap.docs.forEach(doc=>{
+        const data = doc.data();
+        currentRequests[doc.id] = { id: doc.id, ref: doc.ref, data };
+        const row = document.createElement('div'); row.className = 'req-row';
+        const left = document.createElement('div'); left.style.display='flex'; left.style.alignItems='center'; left.style.gap='8px';
+        const avatar = document.createElement('img'); avatar.src = data.from && profileCache[data.from]?.avatar ? profileCache[data.from].avatar : 'https://via.placeholder.com/44'; avatar.style.width='36px'; avatar.style.height='36px'; avatar.style.borderRadius='8px';
+        const name = document.createElement('div'); name.textContent = data.from || 'unknown';
+        left.appendChild(avatar); left.appendChild(name);
+        const actions = document.createElement('div'); actions.className = 'req-actions';
+        const acceptBtn = document.createElement('button'); acceptBtn.className='btn btn-send'; acceptBtn.type='button'; acceptBtn.textContent='Aceitar';
+        const declineBtn = document.createElement('button'); declineBtn.className='btn btn-plain'; declineBtn.type='button'; declineBtn.textContent='Recusar';
+        actions.appendChild(acceptBtn); actions.appendChild(declineBtn);
+        row.appendChild(left); row.appendChild(actions);
+        requestsList.appendChild(row);
+
+        acceptBtn.addEventListener('click', async ()=>{
+          try{
+            await db.doc('users/'+currentUser).set({ friends: firebase.firestore.FieldValue.arrayUnion(data.from) }, { merge: true });
+            await db.doc('users/'+data.from).set({ friends: firebase.firestore.FieldValue.arrayUnion(currentUser) }, { merge: true });
+            await doc.ref.update({ status: 'accepted', respondedAt: firebase.firestore.FieldValue.serverTimestamp() });
+            toast('Amizade aceita!');
+            row.remove();
+            requestsCount.textContent = String(Math.max(0, Number(requestsCount.textContent)-1));
+            if(requestsCount.textContent === '0') requestsCount.style.display='none';
+            watchFriends();
+            try{ playSendSound(); }catch(e){}
+          }catch(e){ console.error('accept err', e); toast('Erro ao aceitar'); }
+        });
+
+        declineBtn.addEventListener('click', async ()=>{
+          try{
+            await doc.ref.update({ status: 'declined', respondedAt: firebase.firestore.FieldValue.serverTimestamp() });
+            row.remove();
+            requestsCount.textContent = String(Math.max(0, Number(requestsCount.textContent)-1));
+            if(requestsCount.textContent === '0') requestsCount.style.display='none';
+            toast('Pedido recusado');
+          }catch(e){ console.error('decline err', e); toast('Erro ao recusar'); }
+        });
+      });
+    }, err=> { console.error('watchRequests err', err); });
+}
+
+btnRequests.addEventListener('click', ()=>{
+  if(!currentUser){ toast('Faça login para ver pedidos'); return; }
+  requestsModal.style.display = 'flex';
+});
+requestsModal.addEventListener('click', (e)=> { if(e.target === requestsModal) requestsModal.style.display='none'; });
+
+/* =========================
+   Helpers upload (Supabase first, Firebase fallback)
+   ========================= */
+async function uploadToSupabase(bucket, path, file){
+  try{
+    console.log('Supabase upload attempt:', bucket, path, file);
+    const { data, error } = await supabaseClient.storage.from(bucket).upload(path, file, { cacheControl:'3600', upsert:false });
+    if(error){
+      console.warn('Supabase upload error', error);
+      throw error;
+    }
+    // get public url
+    const pub = await supabaseClient.storage.from(bucket).getPublicUrl(path);
+    const publicUrl = (pub && pub.data && (pub.data.publicUrl || pub.data.publicURL)) || null;
+    console.log('Supabase publicUrl:', publicUrl);
+    if(!publicUrl) throw new Error('Sem URL pública (Supabase)');
+    return publicUrl;
+  }catch(err){
+    console.warn('uploadToSupabase failed', err);
+    throw err;
+  }
+}
+
+async function uploadToFirebase(path, file){
+  try{
+    console.log('Firebase upload attempt', path);
+    const ref = storage.ref().child(path);
+    const snap = await ref.put(file, { contentType: file.type || 'image/jpeg' });
+    const url = await snap.ref.getDownloadURL();
+    console.log('Firebase publicUrl:', url);
+    return url;
+  }catch(err){
+    console.warn('uploadToFirebase failed', err);
+    throw err;
+  }
+}
+
+/* =========================
+   AVATAR upload (profile)
+   ========================= */
+btnChangeAvatar.addEventListener('click', ()=> profileFile.click());
+profileFile.addEventListener('change', async ()=> {
+  const f = profileFile.files && profileFile.files[0];
+  if(!f) { profileFile.value=''; return; }
+  if(!currentUser) { profileFile.value=''; return toast('Faça login antes de alterar avatar'); }
+  // immediate preview
+  const prev = URL.createObjectURL(f);
+  profileAvatar.src = prev;
+  btnSaveProfile.disabled = true;
+  try{
+    const safe = (f.name || 'avatar').replace(/[^a-zA-Z0-9.\-_]/g,'_');
+    const supPath = `avatars/${currentUser}-${Date.now()}_${safe}`;
+    let finalUrl = null;
+    // try supabase first
+    try{
+      finalUrl = await uploadToSupabase('project', supPath, f);
+      console.log('Avatar uploaded to Supabase', finalUrl);
+    }catch(supErr){
+      console.warn('Supabase avatar upload failed, trying Firebase', supErr);
+      try{
+        const fbPath = `avatars/${currentUser}-${Date.now()}_${safe}`;
+        finalUrl = await uploadToFirebase(fbPath, f);
+        console.log('Avatar uploaded to Firebase', finalUrl);
+      }catch(fbErr){
+        console.error('Both avatar uploads failed', fbErr);
+        throw fbErr;
+      }
+    }
+    if(!finalUrl) throw new Error('Não foi possível obter URL do avatar');
+    // persist URL in Firestore
+    await db.doc('users/'+currentUser).set({ avatar: finalUrl }, { merge:true });
+    profileCache[currentUser] = profileCache[currentUser] || {};
+    profileCache[currentUser].avatar = finalUrl;
+    meAvatarLeft.src = finalUrl; meAvatarLeft.dataset.user = currentUser;
+    profileAvatar.src = finalUrl;
+    updateAllAvatars(currentUser, finalUrl);
+    toast('Avatar salvo com sucesso');
+  }catch(e){
+    console.error('avatar upload err', e);
+    toast('Erro ao enviar avatar: ' + (e.message || JSON.stringify(e)));
+  }finally{
+    try{ URL.revokeObjectURL(prev); }catch(e){}
+    profileFile.value='';
+    btnSaveProfile.disabled = false;
+  }
+});
+
+/* save profile */
+btnSaveProfile.addEventListener('click', async ()=>{
+  if(!currentUser) return toast('Faça login');
+  const name = (profileName.value||'').trim();
+  const bio = (profileBio.value||'').trim().slice(0,200);
+  try{
+    await db.doc('users/'+currentUser).set({ name, bio }, { merge:true });
+    profileCache[currentUser] = profileCache[currentUser] || {};
+    profileCache[currentUser].name = name;
+    profileCache[currentUser].bio = bio;
+    meNameLeft.textContent = name || currentUser;
+    meBioLeft.textContent = bio || '';
+    profileModal.style.display = 'none';
+    toast('Perfil atualizado');
+  }catch(e){ console.error('save profile err', e); toast('Erro ao salvar perfil'); }
+});
+
+/* ========== FRIENDS WATCHER robust ========== */
+function removeFriendSubscription(username){
+  const key = normalize(username);
+  try{
+    if(friendUnsubs[key] && typeof friendUnsubs[key] === 'function'){
+      try{ friendUnsubs[key](); }catch(e){}
+      delete friendUnsubs[key];
+    }
+    const node = friendsList.querySelector(`[data-user="${key}"]`);
+    if(node) node.remove();
+  }catch(e){ console.warn('removeFriendSubscription err', e); }
+}
+function watchFriends(){
+  if(!currentUser) return;
+  db.doc('users/' + currentUser).onSnapshot(async snap => {
+    try{
+      friendsList.innerHTML = '';
+      const friends = snap.data()?.friends || [];
+      const desired = new Set((friends||[]).map(f=>normalize(f)));
+      Object.keys(friendUnsubs).forEach(existing => {
+        if(!desired.has(existing)) removeFriendSubscription(existing);
+      });
+      for(const friend of friends){
+        const key = normalize(friend);
+        if(friendUnsubs[key]) continue;
+        try{
+          friendUnsubs[key] = db.doc('users/' + key)
+            .onSnapshot(fsnap => {
+              if(!fsnap.exists){ removeFriendSubscription(key); return; }
+              const data = fsnap.data() || {};
+              profileCache[key] = profileCache[key] || {};
+              profileCache[key].name = data.name || profileCache[key].name || key;
+              profileCache[key].avatar = data.avatar || profileCache[key].avatar || '';
+              profileCache[key].bio = data.bio || profileCache[key].bio || '';
+              profileCache[key].online = !!data.online;
+              profileCache[key].lastSeen = data.lastSeen || null;
+              const existing = friendsList.querySelector(`[data-user="${key}"]`);
+              const node = createFriendNode(key, profileCache[key]);
+              if(existing) friendsList.replaceChild(node, existing); else friendsList.appendChild(node);
+            }, err => {
+              console.error('friend doc watch err for', key, err);
+              if(friendUnsubs[key]){ try{ friendUnsubs[key](); }catch(e){} delete friendUnsubs[key]; }
+            });
+        }catch(e){ console.error('subscribe friend err', key, e); }
+      }
+      if((friends||[]).length === 0) friendsList.innerHTML = '<div style="color:var(--muted);padding:8px">Nenhum amigo</div>';
+    }catch(e){ console.error('watchFriends outer err', e); }
+  });
+}
+function createFriendNode(username, data){
+  const key = normalize(username);
+  const div = document.createElement('div');
+  div.className='friend';
+  div.dataset.user = key;
+  div.setAttribute('role','button');
+  div.style.minWidth = '0';
+  const img = document.createElement('img');
+  img.src = data?.avatar || 'https://via.placeholder.com/44';
+  img.alt = username;
+  img.dataset.user = key;
+  const info = document.createElement('div'); info.className='meta'; info.style.minWidth='0';
+  const name = document.createElement('div'); name.className='name'; name.textContent = data?.name || username;
+  const smallWrap = document.createElement('div'); smallWrap.style.display='flex'; smallWrap.style.alignItems='center'; smallWrap.style.gap='6px';
+  const small = document.createElement('div'); small.className='small'; small.textContent = data?.online ? 'online' : 'offline';
+  const dot = document.createElement('span'); dot.className = 'status-dot ' + (data?.online ? 'status-online' : 'status-offline');
+  smallWrap.appendChild(small); smallWrap.appendChild(dot);
+  info.appendChild(name); info.appendChild(smallWrap);
+  div.appendChild(img); div.appendChild(info);
+  div.addEventListener('click', ()=> { try{ openChat(username); }catch(e){ console.warn(e); } layoutRoot.classList.remove('friends-open'); document.getElementById('leftPanel').setAttribute('aria-hidden','true'); });
+  return div;
+}
+
+/* getProfile/updateAllAvatars */
+async function getProfile(u){
+  const id = normalize(u);
+  const snap = await db.doc('users/'+id).get();
+  const data = snap.exists ? snap.data() : { name:id, avatar:'' };
+  profileCache[id] = profileCache[id] || {};
+  profileCache[id].name = data.name || id;
+  profileCache[id].avatar = data.avatar || '';
+  profileCache[id].bio = data.bio || '';
+  profileCache[id].online = !!data.online;
+  profileCache[id].lastSeen = data.lastSeen || null;
+  return profileCache[id];
+}
+function updateAllAvatars(user, url){
+  const key = normalize(user);
+  const nodes = document.querySelectorAll(`[data-user="${key}"]`);
+  nodes.forEach(n => {
+    if(n.tagName && n.tagName.toLowerCase()==='img') n.src = url;
+    else { const i = n.querySelector && n.querySelector('img'); if(i) i.src = url; }
+  });
+  if(meAvatarLeft && meAvatarLeft.dataset.user === key) meAvatarLeft.src = url;
+  if(peerAvatarTop && peerAvatarTop.dataset.user === key) peerAvatarTop.src = url;
+  if(peerProfileAvatar && peerProfileAvatar.dataset && peerProfileAvatar.dataset.user === key) peerProfileAvatar.src = url;
+}
+
+/* ========== openChat & renderMessage (APPLYING THE SIMPLE SCROLL LOGIC) ========== */
+async function openChat(peerRaw){
+  if(!currentUser) return toast('Faça login');
+  const peer = normalize(peerRaw);
+  if(unsubChat){ try{ unsubChat(); }catch(e){} unsubChat=null; }
+  if(unsubPeer){ try{ unsubPeer(); }catch(e){} unsubPeer=null; }
+
+  const pSnap = await db.doc('users/'+peer).get();
+  const pData = pSnap.exists ? pSnap.data() : { name:peer, avatar:'' };
+  profileCache[peer] = profileCache[peer] || {};
+  profileCache[peer].name = pData.name || peer;
+  profileCache[peer].avatar = pData.avatar || '';
+  profileCache[peer].online = !!pData.online;
+  profileCache[peer].lastSeen = pData.lastSeen || null;
+
+  activePeer = peer;
+
+  centerMain.classList.remove('no-active');
+  emptyPlaceholder.style.display = 'none';
+  peerName.textContent = profileCache[peer].name || peer;
+  peerAvatarTop.src = profileCache[peer].avatar || 'https://via.placeholder.com/48';
+  peerAvatarTop.dataset.user = peer;
+  peerAvatarTop.style.display = 'inline-block';
+  peerDotInline.style.display = 'inline-block';
+  peerDotInline.className = 'status-dot ' + (profileCache[peer].online ? 'status-online' : 'status-offline');
+  peerSub.textContent = profileCache[peer].online ? 'online' : (profileCache[peer].lastSeen ? ('visto: '+ new Date(profileCache[peer].lastSeen.seconds*1000).toLocaleString()) : '');
+
+  peerAvatarTop.onclick = ()=> openAnyUserProfile(peer);
+  peerName.onclick = ()=> { if(activePeer) openAnyUserProfile(activePeer); };
+
+  unsubPeer = db.doc('users/' + peer).onSnapshot(snap=>{
+    if(!snap.exists) return;
+    const d = snap.data() || {};
+    profileCache[peer] = profileCache[peer] || {};
+    profileCache[peer].name = d.name || profileCache[peer].name || peer;
+    profileCache[peer].avatar = d.avatar || profileCache[peer].avatar || '';
+    profileCache[peer].online = !!d.online;
+    profileCache[peer].lastSeen = d.lastSeen || profileCache[peer].lastSeen || null;
+
+    peerName.textContent = profileCache[peer].name;
+    peerAvatarTop.src = profileCache[peer].avatar || 'https://via.placeholder.com/48';
+    peerAvatarTop.dataset.user = peer;
+    if(profileCache[peer].online){
+      peerSub.textContent = 'online';
+      peerDotInline.className = 'status-dot status-online';
+    } else {
+      peerDotInline.className = 'status-dot status-offline';
+      peerSub.textContent = profileCache[peer].lastSeen ? ('visto: '+ new Date(profileCache[peer].lastSeen.seconds*1000).toLocaleString()) : '';
+    }
+    updateAllAvatars(peer, profileCache[peer].avatar || '');
+  });
+
+  const chatId = [currentUser, peer].sort().join('__');
+
+  let firstSnap = true;
+
+  // *** IMPORTANT: simplified scroll behavior (only force-to-bottom after render) ***
+  unsubChat = db.collection('chats').doc(chatId).collection('messages').orderBy('ts')
+    .onSnapshot(async snap=>{
+      // Render everything (clear + append)
+      messagesEl.innerHTML = '';
+      for(const d of snap.docs){
+        const m = d.data();
+        const id = d.id;
+        const author = normalize(m.from);
+        if(author && !profileCache[author]) await getProfile(author);
+        const el = await renderMessage(m, id);
+        messagesEl.appendChild(el);
+      }
+
+      // play receive sound for new incoming messages (except on first load)
+      snap.docChanges().forEach(ch => {
+        if(ch.type === 'added'){
+          const m = ch.doc.data();
+          const from = normalize(m.from);
+          if(!firstSnap && from !== currentUser) try{ playReceiveSound(); }catch(e){}
+        }
+      });
+      firstSnap = false;
+
+      // FORCE scroll to bottom after rendering.
+      messagesEl.style.scrollBehavior = 'auto';
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      setTimeout(()=> {
+        messagesEl.style.scrollBehavior = 'smooth';
+      }, 60);
+    });
+
+  inputText.disabled = false;
+  inputText.focus && inputText.focus();
+  updateComposer();
+  // also ensure when opening chat we do one scroll attempt to capture images loading etc.
+  setTimeout(()=> messagesEl.scrollTop = messagesEl.scrollHeight, 120);
+}
+
+async function renderMessage(m, docId){
+  const from = normalize(m.from);
+  const isMe = (from === currentUser);
+  const row = document.createElement('div'); row.className = 'msg-row';
+  row.style.justifyContent = isMe ? 'flex-end' : 'flex-start';
+  row.dataset.msgid = docId;
+
+  const avatar = document.createElement('img'); avatar.className='msg-avatar'; avatar.dataset.user = from;
+  avatar.src = (m.avatar && m.avatar.trim()) ? m.avatar : (profileCache[from] && profileCache[from].avatar) || 'https://via.placeholder.com/44';
+  avatar.addEventListener('click', (ev)=>{ ev.stopPropagation(); openAnyUserProfile(from); });
+
+  const bubble = document.createElement('div'); bubble.className = 'msg ' + (isMe ? 'me' : 'their');
+  bubble.style.maxWidth = 'calc(100% - 72px)';
+  bubble.dataset.msgid = docId;
+
+  const meta = document.createElement('div'); meta.className = 'meta';
+  meta.textContent = (profileCache[from] && profileCache[from].name) ? profileCache[from].name : from;
+  bubble.appendChild(meta);
+
+  if(m.deleted){
+    const removed = document.createElement('div');
+    removed.textContent = 'Mensagem apagada';
+    removed.style.fontStyle = 'italic';
+    removed.style.opacity = '0.9';
+    bubble.appendChild(removed);
+  } else {
+    if(m.replyToId){
+      const replyBox = document.createElement('div');
+      replyBox.style.borderLeft = '3px solid rgba(255,255,255,0.06)';
+      replyBox.style.paddingLeft = '8px';
+      replyBox.style.marginBottom = '6px';
+      replyBox.style.fontSize = '13px';
+      replyBox.style.color = 'var(--muted)';
+      replyBox.textContent = 'Carregando resposta...';
+      bubble.appendChild(replyBox);
+
+      (async ()=>{
+        try{
+          const chatId = [currentUser, activePeer].sort().join('__');
+          const docRef = db.collection('chats').doc(chatId).collection('messages').doc(m.replyToId);
+          const snap = await docRef.get();
+          if(!snap.exists){ replyBox.textContent = 'Mensagem apagada'; return; }
+          const real = snap.data() || {};
+          if(real.deleted) replyBox.textContent = 'Mensagem apagada';
+          else if(real.text && real.text.trim()){
+            replyBox.textContent = real.from + ': ' + (real.text.length>80 ? real.text.slice(0,80)+'…' : real.text);
+          } else if(real.imageUrl){
+            replyBox.textContent = real.from + ': [imagem]';
+          } else {
+            replyBox.textContent = real.from + ': (sem conteúdo)';
+          }
+        }catch(e){ console.debug('reply preview fetch err', e); }
+      })();
+    }
+
+    if(m.text && m.text.trim()){
+      const p = document.createElement('div'); p.textContent = m.text; bubble.appendChild(p);
+    }
+    if(m.imageUrl){
+      const img = document.createElement('img'); img.className = 'msg-image'; img.src = m.imageUrl; img.alt='imagem';
+      img.addEventListener('click', ()=> window.open(m.imageUrl,'_blank'));
+      bubble.appendChild(img);
+    }
+  }
+
+  bubble.style.cursor = 'pointer';
+  bubble.addEventListener('click', (ev)=>{
+    ev.stopPropagation();
+    showMessageActions(docId, m, bubble);
+  });
+
+  if(isMe){
+    row.appendChild(bubble);
+    row.appendChild(avatar);
+  } else {
+    row.appendChild(avatar);
+    row.appendChild(bubble);
+  }
+  return row;
+}
+
+/* message action popup */
+function showMessageActions(docId, m, anchorEl){
+  msgActionPopup.style.display = 'none';
+  msgActionPopup.innerHTML = '';
+  const btnReply = document.createElement('button'); btnReply.type='button'; btnReply.textContent='Responder';
+  btnReply.addEventListener('click', ()=>{ setReplyTo(docId, m); hideMsgActionPopup(); });
+  const actionsContainer = document.createElement('div'); actionsContainer.style.display='flex'; actionsContainer.style.gap='6px';
+  actionsContainer.appendChild(btnReply);
+  if(m.from === currentUser && !m.deleted){
+    const btnDelete = document.createElement('button'); btnDelete.type='button'; btnDelete.textContent='Apagar para todos'; btnDelete.style.color='#ff7b7b';
+    btnDelete.addEventListener('click', async ()=>{
+      const ok = confirm('Apagar esta mensagem para todos? Esta ação não pode ser desfeita.');
+      if(!ok) return;
+      try{ await deleteMessageForEveryone(docId); hideMsgActionPopup(); }catch(e){ console.error(e); alert('Erro ao apagar'); }
+    });
+    actionsContainer.appendChild(btnDelete);
+  }
+  const btnClose = document.createElement('button'); btnClose.type='button'; btnClose.textContent='Fechar';
+  btnClose.addEventListener('click', hideMsgActionPopup);
+  actionsContainer.appendChild(btnClose);
+  msgActionPopup.appendChild(actionsContainer);
+  msgActionPopup.style.display = 'flex';
+  const rect = anchorEl.getBoundingClientRect();
+  setTimeout(()=> {
+    const popupRect = msgActionPopup.getBoundingClientRect();
+    let left = rect.left + (rect.width/2) - (popupRect.width/2);
+    let top = rect.top - popupRect.height - 10;
+    if(top < 8) top = rect.bottom + 8;
+    if(left < 8) left = 8;
+    msgActionPopup.style.left = left + 'px';
+    msgActionPopup.style.top = top + 'px';
+  }, 10);
+}
+function hideMsgActionPopup(){ msgActionPopup.style.display = 'none'; }
+
+/* delete message */
+async function deleteMessageForEveryone(docId){
+  if(!currentUser || !activePeer) throw new Error('Sem chat ativo');
+  const chatId = [currentUser, activePeer].sort().join('__');
+  const ref = db.collection('chats').doc(chatId).collection('messages').doc(docId);
+  await ref.update({
+    deleted: true,
+    deletedBy: currentUser,
+    deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    text: '',
+    imageUrl: ''
+  });
+}
+
+/* reply management */
+function setReplyTo(docId, m){
+  pendingReply = { id: docId, from: m.from, text: m.text || '', imageUrl: m.imageUrl || '' };
+  renderReplyPreview();
+}
+function clearReply(){ pendingReply = null; replyPreview.style.display = 'none'; replyPreview.innerHTML = ''; }
+function renderReplyPreview(){
+  if(!pendingReply) return clearReply();
+  replyPreview.innerHTML = '';
+  replyPreview.style.display = 'flex';
+  const who = document.createElement('div'); who.className='small'; who.textContent = pendingReply.from;
+  const txt = document.createElement('div'); txt.className='text'; txt.textContent = pendingReply.text ? (pendingReply.text.length>120 ? pendingReply.text.slice(0,120)+'…' : pendingReply.text) : (pendingReply.imageUrl ? '[imagem]' : '(sem conteúdo)');
+  const cancel = document.createElement('button'); cancel.className='btn btn-plain'; cancel.type='button'; cancel.textContent='Cancelar';
+  cancel.style.marginLeft = '8px'; cancel.addEventListener('click', ()=> clearReply());
+  replyPreview.appendChild(who); replyPreview.appendChild(txt); replyPreview.appendChild(cancel);
+}
+
+/* SEND flow: texto + imagem (robusto) */
+btnSend.addEventListener('click', async ()=>{
+  if(!currentUser || !activePeer) return toast('Selecione um chat e faça login');
+  const text = (inputText.value||'').trim();
+  if(!text && !pendingFileLocal) return toast('Digite uma mensagem ou selecione uma imagem');
+
+  const chatId = [currentUser, activePeer].sort().join('__');
+  const avatarForMsg = profileCache[currentUser]?.avatar || '';
+
+  const fileToUpload = pendingFileLocal;
+
+  try{
+    const msg = { from: currentUser, to: activePeer, text: text || '', avatar: avatarForMsg, imageUrl: '', ts: firebase.firestore.FieldValue.serverTimestamp() };
+    if(pendingReply){ msg.replyToId = pendingReply.id; }
+
+    if(fileToUpload){
+      const safeName = (fileToUpload.name || 'img').replace(/[^a-zA-Z0-9.\-_]/g,'_');
+      let imageUrl = null;
+
+      // try Supabase first
+      const supPath = `chats/${chatId}/${Date.now()}_${safeName}`;
+      try{
+        imageUrl = await uploadToSupabase('project', supPath, fileToUpload);
+        console.log('Uploaded image to Supabase:', imageUrl);
+      }catch(supErr){
+        console.warn('Supabase upload failed, trying Firebase fallback', supErr);
+        const fbPath = `chats/${chatId}/${Date.now()}_${safeName}`;
+        imageUrl = await uploadToFirebase(fbPath, fileToUpload);
+        console.log('Uploaded image to Firebase:', imageUrl);
+      }
+
+      if(!imageUrl) throw new Error('Não foi possível obter URL da imagem após upload');
+      msg.imageUrl = imageUrl;
+    }
+
+    await db.collection('chats').doc(chatId).collection('messages').add(msg);
+    console.log('Message saved', msg);
+
+    // cleanup preview & states
+    try{
+      const imgs = composerPreviewImg.querySelectorAll('img');
+      imgs.forEach(im => { if(im && im.src && im.src.startsWith('blob:')) try{ URL.revokeObjectURL(im.src); }catch(e){} });
+    }catch(e){}
+    composerPreviewImg.innerHTML = '';
+    composerPreviewImg.style.display = 'none';
+    pendingFileLocal = null;
+    inputFile.value = '';
+    inputText.value = '';
+    clearReply();
+    updateComposer && updateComposer();
+    try{ playSendSound(); }catch(e){}
+  }catch(e){
+    console.error('SEND error', e);
+    if(e && e.message && e.message.toLowerCase().includes('permission')) toast('Erro de permissão ao enviar: verifique regras do Storage e RLS do Supabase');
+    else toast('Erro ao enviar: ' + (e.message || JSON.stringify(e)));
+  }
+});
+</script>
+
+<!-- Parte 2 (continuação do seu script) -->
+<script>
+/* attach image preview */
+btnAttach.addEventListener('click', ()=> { if(!currentUser) return toast('Faça login'); if(!activePeer) return toast('Abra um chat'); inputFile.click(); });
+inputFile.addEventListener('change', ()=> {
+  const f = inputFile.files && inputFile.files[0];
+  if(!f) { inputFile.value = ''; pendingFileLocal = null; updateComposer(); return; }
+  pendingFileLocal = f;
+  composerPreviewImg.innerHTML = '';
+  composerPreviewImg.style.display = 'block';
+  const thumb = document.createElement('img'); thumb.src = URL.createObjectURL(f); thumb.style.width='84px'; thumb.style.height='84px'; thumb.style.objectFit='cover'; thumb.style.borderRadius='8px';
+  thumb.dataset._temp = 'true';
+  const cancel = document.createElement('button'); cancel.className='btn btn-plain'; cancel.type='button'; cancel.textContent='Remover';
+  cancel.addEventListener('click', ()=> {
+    try{ if(thumb && thumb.src && thumb.src.startsWith('blob:')) URL.revokeObjectURL(thumb.src); }catch(e){}
+    composerPreviewImg.innerHTML=''; composerPreviewImg.style.display='none'; pendingFileLocal = null; inputFile.value = ''; updateComposer();
+  }, { once:true });
+  composerPreviewImg.appendChild(thumb); composerPreviewImg.appendChild(cancel);
+  updateComposer();
+});
+
+/* hide popup when clicking outside */
+document.addEventListener('click', (e)=> { if(msgActionPopup.style.display === 'none') return; if(!msgActionPopup.contains(e.target)) hideMsgActionPopup(); });
+window.addEventListener('resize', hideMsgActionPopup);
+
+/* start requests if needed */
+function startRequestsIfNeeded(){ if(currentUser) watchRequests(); }
+
+/* ========== Peer profile modal ========== */
+async function openPeerProfileModal(){
+  if(!activePeer){ toast('Nenhum chat selecionado'); return; }
+  try{
+    const snap = await db.doc('users/'+activePeer).get();
+    const profile = snap.exists ? snap.data() : (profileCache[activePeer] || { name: activePeer, avatar:'', bio:'' });
+    profileCache[activePeer] = profileCache[activePeer] || {};
+    profileCache[activePeer].name = profile.name || activePeer;
+    profileCache[activePeer].avatar = profile.avatar || profileCache[activePeer].avatar || '';
+    profileCache[activePeer].bio = profile.bio || profileCache[activePeer].bio || '';
+    profileCache[activePeer].online = !!profile.online;
+    peerProfileAvatar.src = profileCache[activePeer].avatar || 'https://via.placeholder.com/120';
+    peerProfileAvatar.dataset.user = activePeer;
+    peerProfileName.textContent = profileCache[activePeer].name;
+    peerProfileMeta.textContent = (profileCache[activePeer].online ? 'online' : 'offline') + (profileCache[activePeer].lastSeen ? ' • visto: ' + new Date(profileCache[activePeer].lastSeen.seconds*1000).toLocaleString() : '');
+    peerProfileBio.textContent = profileCache[activePeer].bio || '';
+    peerProfileModal.style.display = 'flex';
+  }catch(e){ console.error('openPeerProfileModal err', e); toast('Erro ao abrir perfil'); }
+}
+peerProfileClose.addEventListener('click', ()=> peerProfileModal.style.display = 'none');
+peerProfileModal.addEventListener('click', (e)=> { if(e.target === peerProfileModal) peerProfileModal.style.display='none'; });
+
+/* helper to open any user profile */
+async function openAnyUserProfile(user){
+  try{
+    const id = normalize(user);
+    const snap = await db.doc('users/'+id).get();
+    if(!snap.exists) return toast('Perfil não encontrado');
+    const data = snap.data() || {};
+    profileCache[id] = profileCache[id] || {};
+    profileCache[id].name = data.name || id;
+    profileCache[id].avatar = data.avatar || profileCache[id].avatar || '';
+    profileCache[id].bio = data.bio || profileCache[id].bio || '';
+    activePeer = id;
+    openPeerProfileModal();
+  }catch(e){ console.error('openAnyUserProfile err', e); }
+}
+
+/* small utilities */
+function showModal(el){ el.style.display = 'flex'; }
+function hideModal(el){ el.style.display = 'none'; }
+
+/* updateComposer: enable/disable send button based on state */
+function updateComposer(){
+  const hasText = inputText.value && inputText.value.trim().length > 0;
+  btnSend.disabled = !(currentUser && activePeer && (hasText || pendingFileLocal));
+}
+
+/* initial UI state */
+centerMain.classList.add('no-active');
+emptyPlaceholder.style.display = 'flex';
+messagesEl.innerHTML = '';
+inputText.disabled = true;
+btnSend.disabled = true;
+setInterval(updateComposer,300);
+inputText.addEventListener('focus', ()=> setTimeout(()=> messagesEl.scrollTop = messagesEl.scrollHeight, 200));
+
+/* ======= NEW: sync messages padding-bottom with composer height ======= */
+/* This removes the "retângulo preto" gap and keeps messages visible up to the composer. */
+(function syncComposerPadding(){
+  const composerEl = document.getElementById('composer');
+  if(!composerEl || !messagesEl) return;
+
+  function applyPadding(){
+    const gap = 12; // small spacing between last message and composer
+    const h = composerEl.offsetHeight || parseInt(getComputedStyle(composerEl).height) || 76;
+    // update CSS variable for any CSS-based calculations
+    document.documentElement.style.setProperty('--composer-height', h + 'px');
+    document.documentElement.style.setProperty('--composer-gap', gap + 'px');
+    // set messages padding-bottom directly (explicit)
+    messagesEl.style.paddingBottom = (h + gap) + 'px';
+  }
+
+  // observe composer size changes (e.g. image preview, multiline input)
+  if(window.ResizeObserver){
+    const ro = new ResizeObserver(applyPadding);
+    ro.observe(composerEl);
+  }
+
+  window.addEventListener('resize', applyPadding);
+
+  // run once shortly after load (allow layout to stabilize)
+  setTimeout(applyPadding, 60);
+})();
+ /* ================================================================ */
+
+/* expose debug handles */
+window.openChat = openChat;
+window.getProfile = getProfile;
+window.db = db;
+window.supabaseClient = supabaseClient;
+</script>
+
+<!-- Firestore-based Watch Together (robusto) + LiveKit streaming (best-effort) -->
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+  const btnWatchTogether = document.getElementById('btnWatchTogether');
+  const watchModal = document.getElementById('watchModal');
+  const watchClose = document.getElementById('watchClose');
+  const wtVideo = document.getElementById('wtVideo');
+  const wtRoomInput = document.getElementById('wtRoom');
+  const wtJoinBtn = document.getElementById('wtJoin');
+  const wtToggleBtn = document.getElementById('wtToggle');
+  const wtStatus = document.getElementById('wtStatus');
+  const wtUrlInput = document.getElementById('wtUrl');
+  const wtLoadUrl = document.getElementById('wtLoadUrl');
+  const wtSource = document.getElementById('wtSource');
+
+  const LIVEKIT_WS = 'wss://project-stxdbpay.livekit.cloud';
+  const LIVEKIT_TOKEN_SERVER = 'https://livekit-token-server-we15.onrender.com';
+
+  if(wtLoadUrl && wtUrlInput && wtSource){
+    wtLoadUrl.addEventListener('click', () => {
+      const url = (wtUrlInput.value || '').trim();
+      if(!url){ alert('Cole a URL do vídeo (mp4, webm, etc).'); return; }
+      wtSource.src = url;
+      wtVideo.muted = false;
+      wtVideo.load();
+      try{ wtVideo.currentTime = 0; }catch(e){}
+      console.log('[WT] vídeo carregado:', url);
+    });
+  }
+
+  if(!btnWatchTogether || !watchModal || !wtVideo){ console.error('[WT] elementos não encontrados'); return; }
+  btnWatchTogether.addEventListener('click', () => { watchModal.style.display = 'flex'; });
+
+  watchClose && watchClose.addEventListener('click', async () => { watchModal.style.display = 'none'; try{ await disconnectLiveKit(); }catch(e){} });
+
+  watchModal.addEventListener('click', async (e) => { if(e.target === watchModal){ watchModal.style.display = 'none'; try{ await disconnectLiveKit(); }catch(e){} } });
+
+  const WT_clientId = Math.random().toString(36).slice(2);
+  let WT_room = 'global';
+  let WT_enabled = false;
+  let WT_joined = false;
+  let WT_unsub = null;
+  let WT_suppress = false;
+
+  let LK = { connected:false, room:null, publishedTracks:[], remoteEls: new Map() };
+
+  wtToggleBtn.addEventListener('click', () => {
+    if(!WT_joined){ alert('Entre em uma sala primeiro'); return; }
+    WT_enabled = !WT_enabled;
+    wtToggleBtn.textContent = WT_enabled ? 'Watch Together: ON' : 'Watch Together: OFF';
+    wtToggleBtn.classList.toggle('active', WT_enabled);
+    if(WT_enabled){
+      connectAndPublishLiveKit(WT_room).catch(err=>{
+        console.warn('[WT][LiveKit] failed to connect/publish', err);
+        disconnectLiveKit().catch(()=>{});
+        WT_enabled = false;
+        wtToggleBtn.textContent = 'Watch Together: OFF';
+        wtToggleBtn.classList.remove('active');
+        wtStatus.textContent = `Conectado (fallback) ${WT_room} — LiveKit falhou`;
+        alert('LiveKit falhou — usando fallback via Firestore. Veja console para detalhes.');
+      });
+    } else {
+      disconnectLiveKit();
+    }
+  });
+
+  wtJoinBtn.addEventListener('click', () => {
+    WT_room = (wtRoomInput.value || 'global').trim();
+    if(WT_unsub){ WT_unsub(); WT_unsub = null; }
+    const ref = db.doc('watchRooms/' + WT_room);
+    WT_unsub = ref.onSnapshot(snap => { if(snap.exists) handleRemoteAction(snap.data()); });
+    WT_joined = true;
+    wtStatus.textContent = `Conectado (${WT_room}) — modo: Firestore sync`;
+    console.log('[WT] Joined room', WT_room);
+  });
+
+  function showAudioBtn(){
+    if(watchModal.querySelector('.wt-audio-btn')) return;
+    const audioBtn = document.createElement('button');
+    audioBtn.className = 'wt-audio-btn';
+    audioBtn.textContent = 'Ativar áudio';
+    audioBtn.style.position = 'absolute';
+    audioBtn.style.top = '10px';
+    audioBtn.style.right = '10px';
+    audioBtn.style.zIndex = '9999';
+    audioBtn.style.padding = '8px 12px';
+    audioBtn.style.border = 'none';
+    audioBtn.style.borderRadius = '10px';
+    audioBtn.style.background = '#1f8a42';
+    audioBtn.style.color = '#fff';
+    audioBtn.style.cursor = 'pointer';
+    watchModal.appendChild(audioBtn);
+    audioBtn.addEventListener('click', async () => { wtVideo.muted = false; await wtVideo.play().catch(()=>{}); audioBtn.remove(); });
+  }
+
+  function writeAction(type){
+    if(!WT_enabled) return;
+    if(LK.connected){
+      try{
+        const payload = JSON.stringify({ type, time: wtVideo.currentTime, clientId: WT_clientId });
+        LK.room && LK.room.localParticipant && LK.room.localParticipant.publishData && LK.room.localParticipant.publishData(new TextEncoder().encode(payload), { topic: 'watch-together' });
+      }catch(e){ console.warn('[WT][LiveKit] publishData failed', e); }
+      return;
+    }
+    db.doc('watchRooms/' + WT_room).set({ lastAction: { type, time: wtVideo.currentTime, clientId: WT_clientId } }, { merge:true });
+  }
+
+  wtVideo.addEventListener('play', () => { if(!WT_suppress) writeAction('play'); });
+  wtVideo.addEventListener('pause', () => { if(!WT_suppress) writeAction('pause'); });
+  wtVideo.addEventListener('seeked', () => { if(!WT_suppress) writeAction('seek'); });
+
+  function handleRemoteAction(data){
+    const a = data.lastAction;
+    if(!a || a.clientId === WT_clientId || !WT_enabled) return;
+    WT_suppress = true;
+    wtVideo.currentTime = a.time;
+    if(a.type === 'play'){
+      const p = wtVideo.play();
+      if(p) p.catch(() => { wtVideo.muted = true; wtVideo.play().catch(()=>{}); showAudioBtn(); });
+    }
+    if(a.type === 'pause'){ wtVideo.pause(); }
+    setTimeout(() => WT_suppress = false, 300);
+  }
+
+  async function fetchLiveKitToken(room, identity) {
+    const query = new URLSearchParams({ room, identity }).toString();
+    const candidates = [
+      `${LIVEKIT_TOKEN_SERVER}/token?${query}`,
+      `${LIVEKIT_TOKEN_SERVER}/session?${query}`,
+      `${LIVEKIT_TOKEN_SERVER}/get-token?${query}`,
+    ];
+    for(const url of candidates){
+      try{
+        const res = await fetch(url, { method:'GET', mode:'cors' });
+        if(!res.ok){ console.warn('[WT] token endpoint returned', res.status, url); continue; }
+        const data = await res.json();
+        const token = data?.token || data?.accessToken || data?.access_token;
+        if(token && typeof token === 'string' && token.length > 20){ console.log('[WT] token fetched from', url); return token; }
+      }catch(e){ console.warn('[WT] token fetch candidate failed', url, e); }
+    }
+    throw new Error('[WT][LiveKit] token fetch failed (todos endpoints)');
+  }
+
+  function getLiveKitConnect() {
+    if(typeof window.connect === 'function') return window.connect;
+    if(window.LivekitClient && typeof window.LivekitClient.connect === 'function') return window.LivekitClient.connect.bind(window.LivekitClient);
+    if(window.LivekitClient && typeof window.LivekitClient === 'object' && typeof window.LivekitClient.Room === 'function') {
+      return async function(url, token, opts){
+        const Room = window.LivekitClient.Room;
+        const room = new Room();
+        if(typeof room.connect === 'function'){ await room.connect(url, token, opts); return room; }
+        if(typeof window.LivekitClient.connect === 'function'){ const r = await window.LivekitClient.connect(url, token, opts); return r; }
+        throw new Error('LivekitClient connect API não encontrada');
+      };
+    }
+    if(window.LiveKit && typeof window.LiveKit.connect === 'function') return window.LiveKit.connect.bind(window.LiveKit);
+    if(window.livekit && typeof window.livekit.connect === 'function') return window.livekit.connect.bind(window.livekit);
+    if(window.livekitClient && typeof window.livekitClient.connect === 'function') return window.livekitClient.connect.bind(window.livekitClient);
+    return null;
+  }
+
+  // Robust subscribe to a publication (tries events, .subscribe(), and handles many SDK shapes)
+  async function subscribePublication(pub, participant){
+    if(!pub) return;
+    try{
+      console.log('[WT] attempting subscribePublication', { publ: pub, participant: participant?.identity || participant?.sid });
+      // if publication already has a track and isSubscribed -> attach
+      if(pub.track && pub.isSubscribed){
+        attachTrack(pub.track, pub, participant);
+        return;
+      }
+      // some builds expose .on for events like 'subscribed', 'subscriptionSucceeded', 'trackSubscribed'
+      const tryAttachIfTrack = (maybeTrack) => { if(maybeTrack) attachTrack(maybeTrack, pub, participant); };
+      if(pub.on){
+        ['subscribed','subscriptionSucceeded','trackSubscribed','subscribedTrack','subscription_ok'].forEach(ev=>{
+          try{ pub.on(ev, (arg1, arg2) => {
+            // event shapes vary: sometimes (track, publication) or (publication)
+            if(arg1 && arg1.kind) tryAttachIfTrack(arg1);
+            else if(arg2 && arg2.kind) tryAttachIfTrack(arg2);
+            else if(arg1 && arg1.track) tryAttachIfTrack(arg1.track);
+          }); }catch(e){}
+        });
+      }
+      // some builds have .subscribe() method on publication
+      if(typeof pub.subscribe === 'function'){
+        try{
+          const maybe = await pub.subscribe();
+          if(maybe && maybe.kind) { attachTrack(maybe, pub, participant); return; }
+          // some subscribe resolves to publication itself or undefined
+        }catch(e){ console.warn('[WT] publication.subscribe() failed', e); }
+      }
+      // other SDK shapes expose participant.subscribe(publication)
+      if(participant && typeof participant.subscribe === 'function'){
+        try{
+          const maybe2 = await participant.subscribe(pub);
+          if(maybe2 && maybe2.kind) { attachTrack(maybe2, pub, participant); return; }
+        }catch(e){}
+      }
+      // fallback: try to attach pub.track if it appears later; poll a few times
+      let attempts = 0;
+      const maxAttempts = 8;
+      const poll = setInterval(()=>{
+        attempts++;
+        if(pub.track && !pub._attachedOnce){
+          pub._attachedOnce = true;
+          attachTrack(pub.track, pub, participant);
+          clearInterval(poll);
+        } else if(attempts >= maxAttempts) {
+          clearInterval(poll);
+        }
+      }, 400);
+    }catch(e){ console.warn('[WT] subscribePublication err', e); }
+  }
+
+  // attach remote track helper
+  function attachTrack(track, publication, participant){
+    try{
+      if(!track) return;
+      // if track has attach() use it (common)
+      let el = null;
+      if(typeof track.attach === 'function') el = track.attach();
+      if(!el){
+        // fallback create element
+        el = document.createElement(track.kind === 'audio' ? 'audio' : 'video');
+        if(track instanceof MediaStreamTrack){
+          const ms = new MediaStream([track]);
+          el.srcObject = ms;
+        } else if(track.track){
+          const ms = new MediaStream([track.track]);
+          el.srcObject = ms;
+        }
+      }
+      if(!el) return;
+      el.autoplay = true;
+      el.controls = true;
+      el.style.maxWidth = '100%';
+      el.style.borderRadius = '8px';
+      let remoteContainer = watchModal.querySelector('.watch-remote-container');
+      if(!remoteContainer){
+        remoteContainer = document.createElement('div');
+        remoteContainer.className = 'watch-remote-container';
+        remoteContainer.style.marginTop = '10px';
+        watchModal.querySelector('.watch-card').appendChild(remoteContainer);
+      }
+      const uid = participant?.sid || (publication && publication.trackSid) || Math.random().toString(36).slice(2);
+      // avoid duplicates: if we already attached this uid, skip
+      if(LK.remoteEls.has(uid)) {
+        console.log('[WT] track already attached for uid', uid);
+        return;
+      }
+      LK.remoteEls.set(uid, el);
+      remoteContainer.appendChild(el);
+      console.log('[WT][LiveKit] attached track', { participant: participant?.identity || participant?.sid, kind: track.kind || (track.track && track.track.kind), uid });
+    }catch(e){ console.warn('[WT][LiveKit] attachTrack err', e); }
+  }
+
+  // subscribe to all existing publications in the room (called after connect)
+  async function subscribeToExistingPublications(roomObj){
+    try{
+      if(!roomObj) return;
+      // go through participants
+      (roomObj.participants || []).forEach(p => {
+        try{
+          // publications can be in different properties
+          const pubs = []
+            .concat(p.tracks || [])
+            .concat(p.publications || [])
+            .concat(p.audioTracks || [])
+            .concat(p.videoTracks || []);
+          pubs.forEach(pub => subscribePublication(pub, p));
+          // also listen to future participant-level publications
+          if(p.on){
+            try{ p.on('trackPublished', (publication) => subscribePublication(publication, p)); }catch(e){}
+            try{ p.on('published', (publication) => subscribePublication(publication, p)); }catch(e){}
+          }
+        }catch(e){ console.warn('[WT] subscribeToExistingPublications participant loop err', e); }
+      });
+      // room-level trackPublished
+      if(roomObj.on){
+        try{ roomObj.on('trackPublished', (publication, participant) => subscribePublication(publication, participant)); }catch(e){}
+        try{ roomObj.on('trackSubscribed', (track, publication, participant) => attachTrack(track, publication, participant)); }catch(e){}
+      }
+    }catch(e){ console.warn('[WT] subscribeToExistingPublications err', e); }
+  }
+
+  async function connectAndPublishLiveKit(room) {
+    if(LK.connected && LK.room) return;
+    wtStatus.textContent = `Conectando LiveKit...`;
+    try{ await wtVideo.play().catch(()=>{}); }catch(e){}
+    const identity = `wt_${WT_clientId}_${Math.floor(Math.random()*10000)}`;
+    let token = null;
+    try{ token = await fetchLiveKitToken(room, identity); }catch(err){ console.warn('[WT][LiveKit] token fetch failed', err); throw err; }
+
+    let connectFunc = getLiveKitConnect();
+    if(!connectFunc){
+      const esmCandidates = [
+        'https://cdn.jsdelivr.net/npm/livekit-client@2.16.1/dist/esm/index.js',
+        'https://unpkg.com/livekit-client@2.16.1/dist/esm/index.js'
+      ];
+      for(const u of esmCandidates){
+        try{
+          const mod = await import(u);
+          connectFunc = mod.connect || mod.default?.connect || mod.LivekitClient?.connect || mod.LivekitClient;
+          if(connectFunc) break;
+        }catch(e){ console.warn('[WT][LiveKit] dynamic import failed for', u, e); }
+      }
+    }
+    if(!connectFunc) connectFunc = getLiveKitConnect();
+    if(!connectFunc) throw new Error('LiveKit SDK não está disponível (CDN bloqueado ou não carregado).');
+
+    let roomObj = null;
+    try{
+      roomObj = await connectFunc(LIVEKIT_WS, token, { autoSubscribe: true });
+      LK.room = roomObj;
+      LK.connected = true;
+      wtStatus.textContent = `LiveKit conectado (${room})`;
+      console.log('[WT][LiveKit] connected ', roomObj);
+    }catch(e){
+      console.error('[WT][LiveKit] connect failed', e);
+      try{ if(roomObj && roomObj.disconnect) await roomObj.disconnect(); }catch(err){}
+      throw e;
+    }
+
+    // first, subscribe to any existing publications (important if host already published)
+    try{
+      await subscribeToExistingPublications(roomObj);
+    }catch(e){ console.warn('[WT] subscribeToExistingPublications failed', e); }
+
+    // add listeners to attach future subscriptions reliably
+    try{
+      if(roomObj.on){
+        roomObj.on('participantConnected', (p) => {
+          console.log('[WT] participantConnected', p.identity || p.sid);
+          // subscribe to their existing pubs
+          try{
+            const pubs = [].concat(p.tracks || []).concat(p.publications || []).concat(p.audioTracks || []).concat(p.videoTracks || []);
+            pubs.forEach(pub => subscribePublication(pub, p));
+            if(p.on){
+              try{ p.on('trackPublished', (publication) => subscribePublication(publication, p)); }catch(e){}
+              try{ p.on('trackSubscribed', (track, publication) => attachTrack(track, publication, p)); }catch(e){}
+            }
+          }catch(e){ console.warn('[WT] participantConnected handler err', e); }
+        });
+
+        // also try room-level events for new publications/subscriptions
+        try{ roomObj.on('trackPublished', (publication, participant) => subscribePublication(publication, participant)); }catch(e){}
+        try{ roomObj.on('trackSubscribed', (track, publication, participant) => attachTrack(track, publication, participant)); }catch(e){}
+      }
+    }catch(e){ console.warn('[WT] add listeners failed', e); }
+
+    // publish local captureStream tracks (if available) — host will do this, guests may not have captureStream but still receive
+    try{
+      let mediaStream = null;
+      if(typeof wtVideo.captureStream === 'function'){
+        try{ mediaStream = wtVideo.captureStream(); }catch(e){ console.warn('[WT] captureStream failed', e); }
+      } else if(typeof wtVideo.mozCaptureStream === 'function'){
+        try{ mediaStream = wtVideo.mozCaptureStream(); }catch(e){}
+      }
+      if(mediaStream){
+        const tracks = mediaStream.getTracks();
+        for(const t of tracks){
+          try{
+            if(LK.room && LK.room.localParticipant && LK.room.localParticipant.publishTrack){
+              const pub = await LK.room.localParticipant.publishTrack(t, { name: 'watch-video', source: 'screen' });
+              LK.publishedTracks.push(pub);
+              console.log('[WT] published track ', { kind: t.kind, publication: pub });
+            } else {
+              console.warn('[WT] publish API not available on this SDK build');
+            }
+          }catch(err){
+            console.warn('[WT] publishTrack err', err);
+          }
+        }
+        wtStatus.textContent = `LiveKit stream publicado (${room})`;
+      } else {
+        // no captureStream: this client will subscribe only (guest typical case)
+        console.log('[WT] no captureStream: acting as subscriber only');
+      }
+    }catch(e){
+      console.warn('[WT][LiveKit] error capturing/publishing', e);
+      try{ await disconnectLiveKit(); }catch(err){}
+      throw e;
+    }
+
+    // also listen for data messages (watch-together sync) if available
+    try{
+      roomObj.on && roomObj.on('dataReceived', (payload, participant) => {
+        try{
+          const txt = (new TextDecoder()).decode(payload);
+          const d = JSON.parse(txt);
+          if(d && d.type && d.time != null && participant && participant.identity !== identity){
+            WT_suppress = true;
+            wtVideo.currentTime = d.time;
+            if(d.type === 'play') wtVideo.play().catch(()=>{ wtVideo.muted = true; wtVideo.play().catch(()=>{}); });
+            if(d.type === 'pause') wtVideo.pause();
+            setTimeout(()=> WT_suppress = false, 300);
+          }
+        }catch(e){ /* ignore */ }
+      });
+    }catch(e){ /* ignore */ }
+  }
+
+  async function disconnectLiveKit(){
+    try{
+      if(LK && LK.room){
+        try{
+          if(LK.publishedTracks && LK.publishedTracks.length){
+            LK.publishedTracks.forEach(pub => { try{ pub.unpublish && pub.unpublish(); }catch(e){} });
+            LK.publishedTracks = [];
+          }
+          LK.remoteEls.forEach((el, key) => { try{ if(el && el.remove) el.remove(); }catch(e){} });
+          LK.remoteEls.clear();
+          if(LK.room.disconnect) await LK.room.disconnect();
+          if(LK.room.leave) await LK.room.leave();
+        }catch(e){ console.warn('[WT][LiveKit] graceful disconnect error', e); }
+      }
+    }catch(e){}
+    LK = { connected:false, room:null, publishedTracks:[], remoteEls: new Map() };
+    wtStatus.textContent = `Desconectado (LiveKit)`;
+  }
+
+});
+</script>
+</body>
+</html>
